@@ -1,0 +1,45 @@
+name: Release desktop app
+
+# Запускается при пуше тега вида v1.2.3 — так вы управляете тем, когда
+# именно выходит релиз (обычный пуш в main ничего не собирает и не публикует).
+#
+# Как выпустить новую версию:
+#   1) поднимите "version" в package.json (например 29.0.0 -> 29.1.0)
+#   2) git add -A && git commit -m "v29.1.0"
+#   3) git tag v29.1.0 && git push origin main --tags
+# Дальше GitHub Actions сам соберёт Windows- и macOS-сборки и опубликует
+# GitHub Release с файлами обновления (latest.yml / latest-mac.yml), которые
+# читает autoUpdater в main.js — у пользователей, уже открывших приложение,
+# оно само предложит обновиться.
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            script: release:win
+          - os: macos-latest
+            script: release:mac
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm ci
+
+      # На настоящих Windows/macOS раннерах Wine не нужен — сборка нативная.
+      - run: npm run ${{ matrix.script }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

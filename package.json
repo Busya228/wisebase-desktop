@@ -1,0 +1,73 @@
+{
+  "name": "wisebase-crm-desktop",
+  "productName": "WiseBase CRM",
+  "version": "29.0.0",
+  "description": "WiseBase CRM — десктоп-версия (обёртка над веб-приложением)",
+  "main": "main.js",
+  "author": "WiseBase",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist:win": "electron-builder --win --x64",
+    "dist:mac": "electron-builder --mac --x64 --arm64",
+    "dist": "electron-builder --win --mac",
+    "release:win": "electron-builder --win --x64 --publish always",
+    "release:mac": "electron-builder --mac --x64 --arm64 --publish always"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3",
+    "png2icons": "^2.0.1",
+    "resedit": "^1.7.2"
+  },
+  "build": {
+    "appId": "com.wisebase.crm",
+    "productName": "WiseBase CRM",
+    "copyright": "WiseBase",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "app/**/*",
+      "build/icon.png",
+      "node_modules/**/*",
+      "!**/*.map"
+    ],
+    "afterPack": "scripts/afterPack.js",
+    "publish": {
+      "provider": "github",
+      "owner": "Busya228",
+      "repo": "wisebase-desktop"
+    },
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ],
+      "icon": "build/icon.ico",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "WiseBase CRM"
+    },
+    "mac": {
+      "target": [
+        { "target": "zip", "arch": ["x64", "arm64"] }
+      ],
+      "icon": "build/icon.icns",
+      "category": "public.app-category.business",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
+    }
+  }
+}
