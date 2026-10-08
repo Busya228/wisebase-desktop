@@ -89,13 +89,9 @@ function createWindow() {
   mainWindow.setMenuBarVisibility(false);
   attachShortcuts(mainWindow.webContents);
 
-  // После тихого автообновления, запущенного из трея, окно не показываем —
-  // приложение просто продолжает работать в трее, как и до обновления.
-  let startHidden = false;
-  try {
-    if (fs.existsSync(START_HIDDEN_FLAG)) { startHidden = true; fs.unlinkSync(START_HIDDEN_FLAG); }
-  } catch (_) {}
-  mainWindow.once('ready-to-show', () => { if (!startHidden) mainWindow.show(); });
+  mainWindow.once('ready-to-show', () => mainWindow.show());
+  // Обновление скачалось, пока окно было в трее — спрашиваем при открытии.
+  mainWindow.on('show', () => setTimeout(() => promptUpdate(false), 800));
   mainWindow.loadURL(`http://127.0.0.1:${serverPort}/index.html`);
 
   // Ссылки на внешние карты/Telegram/почту (target=_blank в приложении) должны
@@ -119,9 +115,6 @@ function createWindow() {
     if (!isQuitting) {
       e.preventDefault();
       mainWindow.hide();
-      // Обновление уже скачано и ждало, пока человек закончит работу —
-      // ставим его сейчас, тихо, и перезапускаемся обратно в трей.
-      if (updateReady) installUpdateNow(true);
     }
   });
 }
@@ -186,27 +179,37 @@ function attachShortcuts(wc) {
 }
 
 // ============================================================
-// АВТООБНОВЛЕНИЯ (electron-updater → GitHub Releases), без участия пользователя
+// АВТООБНОВЛЕНИЯ (electron-updater → GitHub Releases)
 //
-// • Проверка: через 5 сек после запуска и затем каждый час (приложение обычно
-//   живёт в трее неделями, поэтому одной проверки при старте мало).
-// • Скачивание: в фоне, автоматически.
-// • Установка (тихая, без окон инсталлятора):
-//     – если окно сейчас скрыто в трее — ставим сразу и перезапускаемся
-//       обратно в трей, пользователь ничего не замечает;
-//     – если человек сейчас работает в окне — НЕ прерываем его: показываем
-//       системное уведомление, а обновление ставится, как только он закроет
-//       окно в трей или выйдет из приложения.
-// • Portable-версия Windows не умеет обновляться (у неё нет места установки),
-//   поэтому для неё проверка отключена.
+// Как это видит пользователь:
+//   1. Вы публикуете новую версию на GitHub (publish-update.bat).
+//   2. Приложение у каждого пользователя само замечает её (при запуске и
+//      потом каждый час) и тихо скачивает в фоне — работать это не мешает.
+//   3. Появляется окно «Доступна новая версия приложения. Обновить?»
+//        • «Обновить» — приложение перезапускается уже новой версией
+//          (секунд 10). Ничего скачивать и переустанавливать вручную не нужно,
+//          все данные и вход в аккаунт сохраняются.
+//        • «Позже» — напомним через 4 часа; а если человек просто выйдет из
+//          приложения, обновление тихо применится при выходе.
+//   Если окно было свёрнуто в трей — вопрос покажется, когда его откроют.
+//
+// macOS без платной подписи Apple обновляться «на месте» не умеет (система
+// запрещает), поэтому там окно предлагает скачать новую версию со страницы
+// релиза. Portable-версия Windows не обновляется (нет места установки).
 // ============================================================
-const START_HIDDEN_FLAG = path.join(app.getPath('userData'), 'start-hidden.flag');
-const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
+const RELEASES_URL = 'https://github.com/Busya228/wisebase-desktop/releases/latest';
+const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;   // проверка раз в час
+const REMIND_LATER_MS = 4 * 60 * 60 * 1000;        // «Позже» = напомнить через 4 часа
 const isPortable = !!process.env.PORTABLE_EXECUTABLE_DIR;
-let updateReady = null;      // info о скачанном обновлении, ждущем установки
-let manualCheck = false;     // проверку запустили кнопкой из трея → показать результат
+const isMacOS = process.platform === 'darwin';
 
-autoUpdater.autoDownload = true;
+let updateReady = null;      // Windows: скачанное обновление, ждёт подтверждения
+let updateForMac = null;     // macOS: найдено обновление (скачивается вручную)
+let promptOpen = false;
+let remindAfter = 0;
+let manualCheck = false;     // проверку запустили кнопкой → показать результат
+
+autoUpdater.autoDownload = !isMacOS;
 autoUpdater.autoInstallOnAppQuit = true;
 
 function updatesSupported() {
@@ -217,58 +220,84 @@ function checkForUpdates(manual) {
   if (!updatesSupported()) {
     if (manual) dialog.showMessageBox({
       message: isPortable
-        ? 'Portable-версия не обновляется автоматически. Установите WiseBase CRM через установщик (WiseBase-CRM-Setup), чтобы получать обновления сами.'
-        : 'Проверка обновлений доступна только в собранном приложении.',
+        ? 'Portable-версия не обновляется сама. Установите WiseBase CRM через установщик (WiseBase-CRM-Setup) — дальше обновления будут приходить автоматически.'
+        : 'Проверка обновлений доступна только в установленном приложении.',
     });
     return;
   }
-  if (updateReady) {
-    if (manual) installUpdateNow(false);
-    return;
-  }
+  // Обновление уже найдено/скачано — не качаем заново, просто спрашиваем.
+  if (updateReady || updateForMac) { promptUpdate(!!manual); return; }
   manualCheck = !!manual;
   autoUpdater.checkForUpdates().catch(() => {});
 }
 
-// Тихая установка. hidden=true — после перезапуска остаться в трее, не
-// открывая окно (пользователь его и не открывал).
-function installUpdateNow(hidden) {
-  try {
-    if (hidden) fs.writeFileSync(START_HIDDEN_FLAG, '1');
-  } catch (_) {}
-  isQuitting = true;
-  // (isSilent=true, isForceRunAfter=true): без окон инсталлятора и с
-  // автоматическим запуском новой версии после установки.
-  autoUpdater.quitAndInstall(true, true);
+async function promptUpdate(force) {
+  const info = updateReady || updateForMac;
+  if (!info || promptOpen) return;
+  if (!force && Date.now() < remindAfter) return;
+  // Окно в трее — спросим, когда пользователь его откроет (см. 'show' ниже).
+  if (!mainWindow || !mainWindow.isVisible()) return;
+
+  promptOpen = true;
+  const ready = !!updateReady;
+  const { response } = await dialog.showMessageBox(mainWindow, {
+    type: 'info',
+    title: 'Обновление WiseBase CRM',
+    message: 'Доступна новая версия приложения. Обновить?',
+    detail: ready
+      ? `Новая версия: ${info.version} (у вас ${app.getVersion()}).\nПриложение перезапустится примерно за 10 секунд — переустанавливать ничего не нужно, все данные сохранятся.`
+      : `Новая версия: ${info.version} (у вас ${app.getVersion()}).\nОткроется страница загрузки — скачайте архив и замените приложение в папке «Программы».`,
+    buttons: ready ? ['Обновить', 'Позже'] : ['Скачать', 'Позже'],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+  });
+  promptOpen = false;
+
+  if (response === 0) {
+    if (ready) {
+      isQuitting = true;
+      // isSilent=true — без окон мастера установки (пользователь уже согласился),
+      // isForceRunAfter=true — сразу запустить новую версию.
+      autoUpdater.quitAndInstall(true, true);
+    } else {
+      shell.openExternal(RELEASES_URL);
+      remindAfter = Date.now() + REMIND_LATER_MS;
+    }
+  } else {
+    remindAfter = Date.now() + REMIND_LATER_MS;
+  }
 }
 
+autoUpdater.on('update-available', (info) => {
+  if (isMacOS) { updateForMac = info; promptUpdate(manualCheck); manualCheck = false; return; }
+  if (manualCheck) dialog.showMessageBox(mainWindow, {
+    message: `Найдена новая версия ${info.version}. Скачиваю — спрошу, когда будет готово.`,
+  });
+});
+
+// Полоска прогресса скачивания на значке в панели задач.
+autoUpdater.on('download-progress', (p) => {
+  if (mainWindow) mainWindow.setProgressBar(Math.max(0, Math.min(1, (p.percent || 0) / 100)));
+});
+
 autoUpdater.on('update-not-available', () => {
-  if (manualCheck) dialog.showMessageBox({ message: 'У вас установлена последняя версия WiseBase CRM.' });
+  if (manualCheck) dialog.showMessageBox(mainWindow, { message: 'У вас установлена последняя версия WiseBase CRM.' });
   manualCheck = false;
 });
 
 autoUpdater.on('error', (err) => {
+  if (mainWindow) mainWindow.setProgressBar(-1);
   if (manualCheck) dialog.showErrorBox('Не удалось проверить обновления', String((err && err.message) || err));
   manualCheck = false;
 });
 
 autoUpdater.on('update-downloaded', (info) => {
   updateReady = info;
+  if (mainWindow) mainWindow.setProgressBar(-1);
+  if (tray) tray.setToolTip(`WiseBase CRM — доступна версия ${info.version}`);
+  promptUpdate(manualCheck);
   manualCheck = false;
-  if (!mainWindow || !mainWindow.isVisible()) {
-    installUpdateNow(true);
-    return;
-  }
-  if (Notification.isSupported()) {
-    const n = new Notification({
-      title: `WiseBase CRM ${info.version} готова к установке`,
-      body: 'Обновление установится автоматически, когда вы закроете окно. Нажмите, чтобы перезапустить сейчас.',
-      icon: ICON_PNG,
-    });
-    n.on('click', () => installUpdateNow(false));
-    n.show();
-  }
-  if (tray) tray.setToolTip(`WiseBase CRM — обновление ${info.version} готово`);
 });
 
 function startUpdateLoop() {
