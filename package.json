@@ -43,12 +43,23 @@
     "publish": {
       "provider": "github",
       "owner": "Busya228",
-      "repo": "wisebase-desktop"
+      "repo": "wisebase-desktop",
+      "releaseType": "draft"
     },
     "win": {
       "target": [
-        { "target": "nsis", "arch": ["x64"] },
-        { "target": "portable", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "icon": "build/icon.ico",
       "signAndEditExecutable": false
@@ -58,16 +69,27 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "WiseBase CRM"
+      "shortcutName": "WiseBase CRM",
+      "artifactName": "WiseBase-CRM-Setup-${version}.${ext}"
     },
     "mac": {
       "target": [
-        { "target": "zip", "arch": ["x64", "arm64"] }
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
       ],
       "icon": "build/icon.icns",
       "category": "public.app-category.business",
       "hardenedRuntime": false,
-      "gatekeeperAssess": false
+      "gatekeeperAssess": false,
+      "artifactName": "WiseBase-CRM-${version}-mac-${arch}.${ext}"
+    },
+    "portable": {
+      "artifactName": "WiseBase-CRM-Portable-${version}.${ext}"
     }
   }
 }

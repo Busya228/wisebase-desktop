@@ -7,7 +7,7 @@
 // окно грузит страницу оттуда — для браузерного движка это обычный "секурный"
 // источник (как localhost), и всё, что уже работает в вебе (SW, кеш, уведомления
 // Notification API), работает и тут без переделок кода приложения.
-const { app, BrowserWindow, Tray, Menu, shell, nativeImage, session, dialog } = require('electron');
+const { app, BrowserWindow, Tray, Menu, shell, nativeImage, session, dialog, Notification } = require('electron');
 const path = require('path');
 const http = require('http');
 const fs = require('fs');
@@ -77,11 +77,25 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: true,
       spellcheck: true,
+      // Не «усыплять» страницу, когда окно свёрнуто в трей: иначе Chromium
+      // замедляет таймеры, realtime-соединение с Supabase рвётся по таймауту
+      // пульса, а напоминания о задачах перестают проверяться. С этим флагом
+      // данные продолжают обновляться в фоне и окно открывается уже актуальным.
+      backgroundThrottling: false,
     },
     show: false,
+    autoHideMenuBar: true,
   });
+  mainWindow.setMenuBarVisibility(false);
+  attachShortcuts(mainWindow.webContents);
 
-  mainWindow.once('ready-to-show', () => mainWindow.show());
+  // После тихого автообновления, запущенного из трея, окно не показываем —
+  // приложение просто продолжает работать в трее, как и до обновления.
+  let startHidden = false;
+  try {
+    if (fs.existsSync(START_HIDDEN_FLAG)) { startHidden = true; fs.unlinkSync(START_HIDDEN_FLAG); }
+  } catch (_) {}
+  mainWindow.once('ready-to-show', () => { if (!startHidden) mainWindow.show(); });
   mainWindow.loadURL(`http://127.0.0.1:${serverPort}/index.html`);
 
   // Ссылки на внешние карты/Telegram/почту (target=_blank в приложении) должны
@@ -105,6 +119,9 @@ function createWindow() {
     if (!isQuitting) {
       e.preventDefault();
       mainWindow.hide();
+      // Обновление уже скачано и ждало, пока человек закончит работу —
+      // ставим его сейчас, тихо, и перезапускаемся обратно в трей.
+      if (updateReady) installUpdateNow(true);
     }
   });
 }
@@ -124,104 +141,141 @@ function createTray() {
 }
 
 function createAppMenu() {
-  // Полноценное меню Edit нужно на macOS, чтобы работали стандартные сочетания
-  // клавиш (Cmd+C/V/X/A/Z) в текстовых полях приложения — без ролей copy/paste/…
-  // в меню Chromium на Mac их не обрабатывает.
-  const isMac = process.platform === 'darwin';
-  const template = [
-    ...(isMac ? [{ label: app.name, role: 'appMenu' }] : []),
-    {
-      label: 'Файл',
-      submenu: [isMac ? { role: 'close' } : { role: 'quit', label: 'Выход' }],
-    },
-    {
-      label: 'Правка',
-      submenu: [
-        { role: 'undo', label: 'Отменить' },
-        { role: 'redo', label: 'Повторить' },
-        { type: 'separator' },
-        { role: 'cut', label: 'Вырезать' },
-        { role: 'copy', label: 'Копировать' },
-        { role: 'paste', label: 'Вставить' },
-        { role: 'selectAll', label: 'Выделить всё' },
-      ],
-    },
-    {
-      label: 'Вид',
-      submenu: [
-        { role: 'reload', label: 'Обновить' },
-        { role: 'forceReload', label: 'Жёстко обновить' },
-        { role: 'toggleDevTools', label: 'Инструменты разработчика' },
-        { type: 'separator' },
-        { role: 'resetZoom', label: 'Обычный размер' },
-        { role: 'zoomIn', label: 'Увеличить' },
-        { role: 'zoomOut', label: 'Уменьшить' },
-        { type: 'separator' },
-        { role: 'togglefullscreen', label: 'Полный экран' },
-      ],
-    },
-    {
-      label: 'Окно',
-      submenu: [{ role: 'minimize', label: 'Свернуть' }, { role: 'zoom', label: 'Развернуть' }],
-    },
-    {
-      label: 'Справка',
-      submenu: [{ label: 'Проверить обновления', click: () => checkForUpdates(true) }],
-    },
-  ];
-  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+  // Windows/Linux: полоску меню «Файл / Правка / Вид / Окно / Справка» над
+  // приложением убираем совсем — у CRM свой интерфейс, а «Проверить обновления»
+  // есть в трее. Копировать/вставить/отменить (Ctrl+C/V/X/Z/A) в полях ввода
+  // работают и без меню — их обрабатывает сам Chromium. Остальные полезные
+  // сочетания (F5, масштаб, F11) добавлены вручную в attachShortcuts().
+  if (process.platform !== 'darwin') {
+    Menu.setApplicationMenu(null);
+    return;
+  }
+  // macOS: меню там не внутри окна, а в системной строке сверху экрана, и без
+  // пункта «Правка» Cmd+C/V в полях ввода не работают — оставляем минимум.
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    { label: app.name, role: 'appMenu' },
+    { label: 'Правка', role: 'editMenu' },
+    { label: 'Окно', role: 'windowMenu' },
+  ]));
+}
+
+// Горячие клавиши, которые раньше давало меню «Вид».
+function attachShortcuts(wc) {
+  wc.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return;
+    const mod = input.control || input.meta;
+    const key = input.key;
+    let handled = true;
+    if (key === 'F5' || (mod && key.toLowerCase() === 'r')) {
+      (input.shift ? wc.reloadIgnoringCache() : wc.reload());
+    } else if (key === 'F11') {
+      mainWindow.setFullScreen(!mainWindow.isFullScreen());
+    } else if (key === 'F12' || (mod && input.shift && key.toLowerCase() === 'i')) {
+      wc.toggleDevTools();
+    } else if (mod && (key === '=' || key === '+')) {
+      wc.setZoomLevel(wc.getZoomLevel() + 0.5);
+    } else if (mod && key === '-') {
+      wc.setZoomLevel(wc.getZoomLevel() - 0.5);
+    } else if (mod && key === '0') {
+      wc.setZoomLevel(0);
+    } else {
+      handled = false;
+    }
+    if (handled) event.preventDefault();
+  });
 }
 
 // ============================================================
-// АВТООБНОВЛЕНИЯ (electron-updater → GitHub Releases)
-// Источник обновлений задан в build-конфиге package.json (publish.provider:
-// "github"). electron-builder при публикации релиза (--publish always)
-// прикладывает к GitHub Release файлы latest.yml/latest-mac.yml — их и читает
-// autoUpdater, чтобы понять, есть ли версия новее текущей.
-// Тихая проверка при старте — не мешает пользователю, если обновлений нет;
-// если найдены — скачивает в фоне и предлагает перезапустить.
-// silent=true (по клику из меню/трея) показывает результат явным диалогом,
-// даже если обновлений нет — иначе пользователь не поймёт, сработала ли кнопка.
+// АВТООБНОВЛЕНИЯ (electron-updater → GitHub Releases), без участия пользователя
+//
+// • Проверка: через 5 сек после запуска и затем каждый час (приложение обычно
+//   живёт в трее неделями, поэтому одной проверки при старте мало).
+// • Скачивание: в фоне, автоматически.
+// • Установка (тихая, без окон инсталлятора):
+//     – если окно сейчас скрыто в трее — ставим сразу и перезапускаемся
+//       обратно в трей, пользователь ничего не замечает;
+//     – если человек сейчас работает в окне — НЕ прерываем его: показываем
+//       системное уведомление, а обновление ставится, как только он закроет
+//       окно в трей или выйдет из приложения.
+// • Portable-версия Windows не умеет обновляться (у неё нет места установки),
+//   поэтому для неё проверка отключена.
 // ============================================================
+const START_HIDDEN_FLAG = path.join(app.getPath('userData'), 'start-hidden.flag');
+const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
+const isPortable = !!process.env.PORTABLE_EXECUTABLE_DIR;
+let updateReady = null;      // info о скачанном обновлении, ждущем установки
+let manualCheck = false;     // проверку запустили кнопкой из трея → показать результат
+
 autoUpdater.autoDownload = true;
 autoUpdater.autoInstallOnAppQuit = true;
 
+function updatesSupported() {
+  return app.isPackaged && !isPortable;
+}
+
 function checkForUpdates(manual) {
-  if (!app.isPackaged) {
-    if (manual) dialog.showMessageBox({ message: 'Проверка обновлений доступна только в собранном приложении.' });
+  if (!updatesSupported()) {
+    if (manual) dialog.showMessageBox({
+      message: isPortable
+        ? 'Portable-версия не обновляется автоматически. Установите WiseBase CRM через установщик (WiseBase-CRM-Setup), чтобы получать обновления сами.'
+        : 'Проверка обновлений доступна только в собранном приложении.',
+    });
     return;
   }
-  autoUpdater.checkForUpdates().catch(err => {
-    if (manual) dialog.showErrorBox('Не удалось проверить обновления', String(err && err.message || err));
-  });
-  if (manual) _manualCheckPending = true;
+  if (updateReady) {
+    if (manual) installUpdateNow(false);
+    return;
+  }
+  manualCheck = !!manual;
+  autoUpdater.checkForUpdates().catch(() => {});
 }
-let _manualCheckPending = false;
+
+// Тихая установка. hidden=true — после перезапуска остаться в трее, не
+// открывая окно (пользователь его и не открывал).
+function installUpdateNow(hidden) {
+  try {
+    if (hidden) fs.writeFileSync(START_HIDDEN_FLAG, '1');
+  } catch (_) {}
+  isQuitting = true;
+  // (isSilent=true, isForceRunAfter=true): без окон инсталлятора и с
+  // автоматическим запуском новой версии после установки.
+  autoUpdater.quitAndInstall(true, true);
+}
 
 autoUpdater.on('update-not-available', () => {
-  if (_manualCheckPending) {
-    dialog.showMessageBox({ message: 'У вас установлена последняя версия WiseBase CRM.' });
-    _manualCheckPending = false;
-  }
+  if (manualCheck) dialog.showMessageBox({ message: 'У вас установлена последняя версия WiseBase CRM.' });
+  manualCheck = false;
 });
+
 autoUpdater.on('error', (err) => {
-  if (_manualCheckPending) {
-    dialog.showErrorBox('Ошибка проверки обновлений', String(err && err.message || err));
-    _manualCheckPending = false;
-  }
+  if (manualCheck) dialog.showErrorBox('Не удалось проверить обновления', String((err && err.message) || err));
+  manualCheck = false;
 });
+
 autoUpdater.on('update-downloaded', (info) => {
-  _manualCheckPending = false;
-  dialog.showMessageBox({
-    type: 'info',
-    buttons: ['Перезапустить сейчас', 'Позже'],
-    defaultId: 0,
-    message: `Доступна новая версия WiseBase CRM ${info.version}`,
-    detail: 'Обновление скачано. Перезапустить приложение сейчас, чтобы применить его?',
-  }).then(({ response }) => {
-    if (response === 0) { isQuitting = true; autoUpdater.quitAndInstall(); }
-  });
+  updateReady = info;
+  manualCheck = false;
+  if (!mainWindow || !mainWindow.isVisible()) {
+    installUpdateNow(true);
+    return;
+  }
+  if (Notification.isSupported()) {
+    const n = new Notification({
+      title: `WiseBase CRM ${info.version} готова к установке`,
+      body: 'Обновление установится автоматически, когда вы закроете окно. Нажмите, чтобы перезапустить сейчас.',
+      icon: ICON_PNG,
+    });
+    n.on('click', () => installUpdateNow(false));
+    n.show();
+  }
+  if (tray) tray.setToolTip(`WiseBase CRM — обновление ${info.version} готово`);
 });
+
+function startUpdateLoop() {
+  if (!updatesSupported()) return;
+  setTimeout(() => checkForUpdates(false), 5000);
+  setInterval(() => checkForUpdates(false), UPDATE_CHECK_INTERVAL_MS);
+}
 
 // Не даём запускать вторую копию приложения — второй экземпляр просто
 // переключит фокус на уже открытое окно первого.
@@ -233,14 +287,15 @@ if (!gotLock) {
     if (mainWindow) { if (!mainWindow.isVisible()) mainWindow.show(); mainWindow.focus(); }
   });
 
+  // Нужен Windows, чтобы системные уведомления показывались от имени приложения.
+  if (process.platform === 'win32') app.setAppUserModelId('com.wisebase.crm');
+
   app.whenReady().then(async () => {
     await startServer();
     createAppMenu();
     createWindow();
     createTray();
-    // Проверяем обновления через пару секунд после старта — не блокируя
-    // открытие окна и не мешая начальной загрузке приложения.
-    setTimeout(() => checkForUpdates(false), 3000);
+    startUpdateLoop();
   });
 
   app.on('window-all-closed', () => {

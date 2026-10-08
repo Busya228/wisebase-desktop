@@ -1,27 +1,49 @@
 name: Release desktop app
 
-# Запускается при пуше тега вида v1.2.3 — так вы управляете тем, когда
-# именно выходит релиз (обычный пуш в main ничего не собирает и не публикует).
+# Полностью автоматический выпуск обновлений.
 #
-# Как выпустить новую версию:
-#   1) поднимите "version" в package.json (например 29.0.0 -> 29.1.0)
-#   2) git add -A && git commit -m "v29.1.0"
-#   3) git tag v29.1.0 && git push origin main --tags
-# Дальше GitHub Actions сам соберёт Windows- и macOS-сборки и опубликует
-# GitHub Release с файлами обновления (latest.yml / latest-mac.yml), которые
-# читает autoUpdater в main.js — у пользователей, уже открывших приложение,
-# оно само предложит обновиться.
+# Запускается при ЛЮБОМ обычном `git push` в main, если изменилось само
+# приложение (app/, main.js, package.json, build/). Ни версию, ни теги вручную
+# поднимать не нужно:
+#   • номер версии считается сам: <major>.<minor> из package.json + номер
+#     запуска workflow (29.0.2, 29.0.3, ...) — каждый релиз всегда новее;
+#   • Windows и macOS собираются параллельно и заливаются в черновик релиза;
+#   • когда ВСЕ файлы залиты, черновик публикуется автоматически — только
+#     после этого установленные приложения видят обновление (никто не получит
+#     «полурелиз» без файлов).
+# Хотите сменить «большую» версию (например на 30.0) — поменяйте "version" в
+# package.json на 30.0.0, дальше счёт пойдёт как 30.0.N.
 on:
   push:
-    tags:
-      - 'v*.*.*'
+    branches: [main]
+    paths:
+      - 'app/**'
+      - 'main.js'
+      - 'package.json'
+      - 'build/**'
   workflow_dispatch: {}
 
 permissions:
   contents: write
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
-  release:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        run: |
+          BASE=$(node -p "require('./package.json').version.split('.').slice(0,2).join('.')")
+          echo "version=${BASE}.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: version
     strategy:
       matrix:
         include:
@@ -32,14 +54,19 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-
       - run: npm ci
-
-      # На настоящих Windows/macOS раннерах Wine не нужен — сборка нативная.
+      - run: npm version ${{ needs.version.outputs.version }} --no-git-tag-version --allow-same-version
       - run: npm run ${{ matrix.script }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish:
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    steps:
+      - run: gh release edit "v${{ needs.version.outputs.version }}" --repo "${{ github.repository }}" --draft=false --latest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

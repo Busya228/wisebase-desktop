@@ -1184,6 +1184,10 @@ kbd{display:inline-flex;align-items:center;justify-content:center;min-width:26px
 .mob-page-title{display:none;align-items:center;gap:8px;font-size:17px;font-weight:700;letter-spacing:-.01em;min-width:0;flex:1}
 .mob-page-title span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .offline-badge.ok{background:var(--green-bg);color:var(--green)}
+.rt-dot{width:8px;height:8px;border-radius:50%;flex:0 0 8px;align-self:center;background:var(--t3,#9ca3af);cursor:help}
+.rt-dot.live{background:var(--green,#16a34a);box-shadow:0 0 0 3px var(--green-bg,rgba(22,163,74,.15))}
+.rt-dot.connecting{background:var(--amber,#d97706)}
+.rt-dot.down{background:var(--red,#dc2626)}
 .offline-chip{font-size:11px;padding:4px 9px;border-radius:12px;font-weight:600;white-space:nowrap;flex-shrink:0;cursor:pointer}
 .offline-chip.off{background:var(--red-bg);color:var(--red)}
 .offline-chip.pending{background:var(--amber-bg);color:var(--amber)}
@@ -1707,6 +1711,7 @@ button,a,select,label{touch-action:manipulation}
         </div>
       </div>
     </div>
+    <span class="rt-dot" id="rt-dot" role="status" style="display:none"></span>
     <span class="offline-badge" id="offline-badge" role="status" aria-live="polite" style="display:none" onclick="flushQueue()" title="Нажмите, чтобы попробовать отправить сейчас"></span>
     <button class="theme-btn" id="nav-layout-btn" onclick="toggleNavLayout()" aria-pressed="false" title="Навигация: сбоку. Нажмите — сверху" aria-label="Переключить вид навигации"><span id="nav-layout-ic">◧</span></button>
     <span class="hk-tip" onclick="document.getElementById('m-shortcuts').classList.add('open')" onkeydown="if(event.key===' '||event.key==='Enter'){event.preventDefault();document.getElementById('m-shortcuts').classList.add('open');}" role="button" tabindex="0" aria-label="Показать горячие клавиши" data-tip="N — новая задача&#10;C — новый клиент&#10;← ↑ → ↓ — перемещение, Enter — открыть&#10;Ctrl+Z — отменить&#10;Ctrl+Y — повторить&#10;Esc — закрыть окно&#10;&#10;Нажмите, чтобы увидеть полный список">⌨ N/C/←→</span>
@@ -8503,6 +8508,7 @@ const RT_MAPPERS = {
   clients: r => dbToClient(r, (S.clients.find(x => x.id === r.id)?.history) || []),
   tasks:   r => dbToTask(r),
   offers:  r => dbToOffer(r),
+  trips:   r => dbToTrip(r),
 };
 function applyRealtimeChange(table, payload){
   const arr = S[table];
@@ -8547,32 +8553,115 @@ function rtRender(table){
   } else if (table === 'offers') {
     if (p === 'offers') renderOffers();
     else if (p === 'dashboard') renderDash();
+  } else if (table === 'trips') {
+    if (p === 'trips') renderTrips();
+    else if (p === 'calendar') renderCalendar();
   }
 }
-// Страховка: если payload оказался неполным, делаем один отложенный полный sync
-// (схлопывает шквал событий в одну синхронизацию, не чаще раза в 2 секунды).
+// Полная «догоняющая» синхронизация: если payload неполный, после обрыва связи,
+// после сна компьютера и т.п. Схлопывает шквал вызовов в один (не чаще раза в 2 с).
+// Не запускается, пока в офлайн-очереди есть неотправленные изменения — иначе
+// данные с сервера перетёрли бы ещё не отправленные локальные правки.
 let _rtResyncTimer = null;
 function rtFullResync(){
-  if (_rtResyncTimer) return;
+  if (_rtResyncTimer || !currentUser) return;
   _rtResyncTimer = setTimeout(async () => {
     _rtResyncTimer = null;
-    try { await syncFromSupabase(); ['clients','tasks','offers'].forEach(rtRender); } catch(e) {}
+    if (!isOnline() || offlineQueue.length || flushing) return;
+    try {
+      await syncFromSupabase();
+      await loadDelegations();
+      await loadAllProfiles();
+      rtAfterRemoteChange();
+      renderAll();
+      updateTaskBadge();
+    } catch(e) {}
   }, 2000);
 }
-function onRtChange(table){
-  return payload => { if (applyRealtimeChange(table, payload)) rtRender(table); else rtFullResync(); };
+// Изменение пришло от другого пользователя/устройства — это не действие этого
+// человека, поэтому не кладём его в стек «Отменить» и обновляем офлайн-кеш.
+let _rtPersistTimer = null;
+function rtAfterRemoteChange(){
+  try { _lastSnapshot = JSON.stringify(S); } catch(e) {}
+  clearTimeout(_rtPersistTimer);
+  _rtPersistTimer = setTimeout(() => { try { persistLocalCache(); } catch(e) {} }, 1500);
 }
+function onRtChange(table){
+  return payload => {
+    if (applyRealtimeChange(table, payload)) { rtAfterRemoteChange(); rtRender(table); }
+    else rtFullResync();
+  };
+}
+
+// ============================================================
+// REALTIME: подписки + самовосстановление
+// • Основной канал (clients/tasks/offers/links/staff_contacts/client_history) и
+//   дополнительный (trips/access_delegations/profiles) — раздельно: если какая-то
+//   таблица из дополнительных не включена в Realtime в Supabase, это не ломает
+//   живые обновления клиентов и задач.
+// • Обрыв канала (сон ноутбука, смена сети, истёкший токен) → переподключение с
+//   нарастающей паузой; пока связи нет — опрос сервера раз в 30 секунд.
+// • После переподключения/возврата сети/разворачивания окна — догоняющая
+//   синхронизация, чтобы не потерять изменения, сделанные за время обрыва.
+// • Страховка: раз в 5 минут лёгкая пересинхронизация, если окно на экране.
+// ============================================================
+let _rtChannel = null;
+let _rtExtraChannel = null;
+let _rtStatus = 'off';          // off | connecting | live | down
+let _rtWasLive = false;
+let _rtRetryTimer = null, _rtRetryDelay = 2000;
+let _rtPollTimer = null, _rtSafetyTimer = null;
+let _rtHiddenAt = 0;
+
+function updateRtIndicator(){
+  const el = document.getElementById('rt-dot');
+  if (!el) return;
+  if (_rtStatus === 'off') { el.style.display = 'none'; return; }
+  el.style.display = '';
+  el.className = 'rt-dot ' + _rtStatus;
+  el.title = _rtStatus === 'live'
+    ? 'Обновления в реальном времени: подключено — изменения коллег появляются сразу'
+    : _rtStatus === 'connecting'
+      ? 'Обновления в реальном времени: подключение…'
+      : 'Нет живого соединения — данные обновляются каждые 30 секунд, переподключаемся…';
+}
+function rtStartPoll(){
+  if (_rtPollTimer) return;
+  _rtPollTimer = setInterval(() => { if (document.visibilityState !== 'hidden') rtFullResync(); }, 30000);
+}
+function rtStopPoll(){ if (_rtPollTimer) { clearInterval(_rtPollTimer); _rtPollTimer = null; } }
+function rtScheduleRetry(){
+  if (_rtRetryTimer) return;
+  _rtRetryTimer = setTimeout(() => {
+    _rtRetryTimer = null;
+    if (currentUser && isOnline()) initRealtime(); else rtScheduleRetry();
+  }, _rtRetryDelay);
+  _rtRetryDelay = Math.min(_rtRetryDelay * 2, 60000);
+}
+function stopRealtime(){
+  const ch = _rtChannel, ex = _rtExtraChannel;
+  _rtChannel = null; _rtExtraChannel = null;
+  if (ch) sb.removeChannel(ch);
+  if (ex) sb.removeChannel(ex);
+  if (_rtRetryTimer) { clearTimeout(_rtRetryTimer); _rtRetryTimer = null; }
+  if (_rtSafetyTimer) { clearInterval(_rtSafetyTimer); _rtSafetyTimer = null; }
+  rtStopPoll();
+  _rtStatus = 'off'; _rtWasLive = false; _rtRetryDelay = 2000;
+  updateRtIndicator();
+}
+
 // Ссылка на текущий канал realtime. initRealtime() может быть вызвана больше
 // одного раза за время жизни вкладки — например, если пользователь вышел из
-// аккаунта и вошёл снова без перезагрузки страницы (SIGNED_OUT → SIGNED_IN).
-// Без отписки от старого канала каждый такой цикл добавлял бы ЕЩЁ ОДНУ активную
-// подписку на изменения в базе — та же утечка, что была с таймерами, только
-// на уровне сетевого соединения: одно и то же изменение стало бы прилетать
-// и обрабатываться N раз подряд.
-let _rtChannel = null;
+// аккаунта и вошёл снова без перезагрузки страницы (SIGNED_OUT → SIGNED_IN), или
+// при переподключении после обрыва. Старые каналы всегда отписываются перед
+// созданием новых — иначе одно изменение обрабатывалось бы N раз подряд.
 function initRealtime() {
-  if (_rtChannel) { sb.removeChannel(_rtChannel); _rtChannel = null; }
-  _rtChannel = sb.channel('crm-changes')
+  if (_rtChannel) { const old = _rtChannel; _rtChannel = null; sb.removeChannel(old); }
+  if (_rtExtraChannel) { const old = _rtExtraChannel; _rtExtraChannel = null; sb.removeChannel(old); }
+  if (_rtRetryTimer) { clearTimeout(_rtRetryTimer); _rtRetryTimer = null; }
+  _rtStatus = 'connecting'; updateRtIndicator();
+
+  const ch = sb.channel('crm-changes')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'clients' }, onRtChange('clients'))
     .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, onRtChange('tasks'))
     .on('postgres_changes', { event: '*', schema: 'public', table: 'offers' }, onRtChange('offers'))
@@ -8611,8 +8700,52 @@ function initRealtime() {
       if (histClientId) renderHistList();
       if (currentPageId() === 'clients') renderClients();
     })
-    .subscribe();
+    .subscribe((status, err) => {
+      if (ch !== _rtChannel) return; // событие от уже закрытого нами канала
+      if (status === 'SUBSCRIBED') {
+        if (_rtWasLive || _rtStatus === 'down') rtFullResync(); // догоняем пропущенное за время обрыва
+        _rtWasLive = true; _rtStatus = 'live'; _rtRetryDelay = 2000;
+        rtStopPoll();
+      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+        if (err) console.warn('Realtime: ' + status, err);
+        _rtStatus = 'down';
+        rtStartPoll();
+        rtScheduleRetry();
+      }
+      updateRtIndicator();
+    });
+  _rtChannel = ch;
+
+  const ex = sb.channel('crm-changes-extra')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'trips' }, onRtChange('trips'))
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'access_delegations' }, () => rtFullResync())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, async () => {
+      await loadAllProfiles(); renderAll();
+    })
+    .subscribe((status, err) => {
+      if (ex !== _rtExtraChannel) return;
+      if (status === 'CHANNEL_ERROR' && err) console.warn('Realtime (поездки/доступы/профили) недоступен — проверьте, что таблицы включены в Realtime:', err);
+    });
+  _rtExtraChannel = ex;
+
+  if (!_rtSafetyTimer) _rtSafetyTimer = setInterval(() => {
+    if (document.visibilityState !== 'hidden') rtFullResync();
+  }, 5 * 60 * 1000);
 }
+
+// Возврат сети и разворачивание окна после долгого перерыва (сон компьютера,
+// свёрнутая вкладка на телефоне) — сразу подтягиваем всё, что изменилось.
+window.addEventListener('online', () => {
+  if (!currentUser) return;
+  if (_rtStatus !== 'live') initRealtime(); else rtFullResync();
+});
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') { _rtHiddenAt = Date.now(); return; }
+  if (currentUser && _rtHiddenAt && Date.now() - _rtHiddenAt > 60000) {
+    if (_rtStatus !== 'live') initRealtime(); else rtFullResync();
+  }
+  _rtHiddenAt = 0;
+});
 
 // --- SOFT LOCK ---
 let _lockTimer = null;
@@ -9597,7 +9730,7 @@ function toggleClientFilters(){const p=document.getElementById('page-clients');i
       stopNotificationPolling();
       stopAutoSave();
       if(_lockTimer){ clearInterval(_lockTimer); _lockTimer=null; }
-      if(_rtChannel){ sb.removeChannel(_rtChannel); _rtChannel=null; }
+      stopRealtime();
       showLoginScreen();
     }
   });
