@@ -5655,7 +5655,7 @@ function toggleClientTag(id,tag,e){
   renderClients();
   toast(idx>=0?'Тег удалён':'Тег добавлен');
 }
-function updCSelBar(){const b=document.getElementById('csel-bar');const n=selC.size;if(n){b.classList.add('vis');document.getElementById('csel-cnt').textContent=`Выбрано: ${n}`;}else b.classList.remove('vis');const ob=document.getElementById('csel-owner-btn');if(ob)ob.style.display=(isAdmin()||isManagerRole())?'':'none';}
+function updCSelBar(){const b=document.getElementById('csel-bar');const n=selC.size;if(n){b.classList.add('vis');document.getElementById('csel-cnt').textContent=`Выбрано: ${n}`;}else b.classList.remove('vis');const ob=document.getElementById('csel-owner-btn');if(ob)ob.style.display=(isAdmin()||isManagerRole()||isHeadRole())?'':'none';}
 function clearCSel(){selC.clear();renderClients();}
 // Переназначение ответственного у выбранных клиентов — доступно только admin/manager
 // (кнопка и так скрыта для остальных через updCSelBar, но проверяем данные и здесь).
@@ -8549,7 +8549,7 @@ function renderMgrDelegationList(){
   const list=document.getElementById('set-mgr-list');
   if(!wrap||!list)return;
   const others=(allProfiles||[]).filter(p=>p.role==='manager'&&p.id!==currentUser?.id);
-  if(!isManagerRole()||!others.length){ wrap.style.display='none'; return; }
+  if((!isManagerRole()&&!isHeadRole())||!others.length){ wrap.style.display='none'; return; }
   wrap.style.display='';
   others.sort((a,b)=>(a.full_name||a.email||'').localeCompare(b.full_name||b.email||'','ru'));
   list.innerHTML=others.map(p=>`<label style="display:flex;align-items:center;gap:7px;font-weight:400;font-size:13px;cursor:pointer">
@@ -8773,6 +8773,9 @@ async function loadProfile() {
 function isAdmin() { return currentProfile && ['admin','administrator'].includes(currentProfile.role); }
 function isAdministrator() { return currentProfile && currentProfile.role === 'administrator'; }
 function isManagerRole() { return currentProfile && currentProfile.role === 'manager'; }
+// Руководитель подразделения (role='user'): видит всех клиентов, редактирует любого,
+// задачи — как manager (свои + делегированные + общие), делегирование — как manager.
+function isHeadRole() { return currentProfile && currentProfile.role === 'user'; }
 
 // === ДОСТУП ПО РОЛЯМ ===
 // admin/administrator — видит и редактирует всё, везде.
@@ -8823,7 +8826,7 @@ function adminViewCheckAll(on){ document.querySelectorAll('.set-view-cb').forEac
 //   manager/user — свои данные + те, к которым явно открыт доступ (см. delegatedFrom,
 //     Профиль → Настройки → «Менеджер»), + общие задачи.
 function scopedClients(){
-  if(isAdmin())return adminViewOwners?S.clients.filter(c=>adminOwnerVisible(c.owner_id)):S.clients;
+  if(isAdmin()||isHeadRole())return adminViewOwners&&!isHeadRole()?S.clients.filter(c=>adminOwnerVisible(c.owner_id)):S.clients;
   return S.clients.filter(c=>c.owner_id===currentUser?.id||delegatedFrom.has(c.owner_id));
 }
 // Клиенты для счётчиков и выгрузок — те же правила, что и для отображения.
@@ -8832,7 +8835,7 @@ function scopedTasks(){
   if(isAdmin())return adminViewOwners?S.tasks.filter(t=>adminOwnerVisible(t.owner_id)):S.tasks;
   return S.tasks.filter(t=>t.owner_id===currentUser?.id||delegatedFrom.has(t.owner_id)||t.isShared);
 }
-function canEditClient(c){ return isAdmin()||c?.owner_id===currentUser?.id||delegatedFrom.has(c?.owner_id); }
+function canEditClient(c){ return isAdmin()||isHeadRole()||c?.owner_id===currentUser?.id||delegatedFrom.has(c?.owner_id); }
 function canEditTask(t){ return isAdmin()||t?.owner_id===currentUser?.id||delegatedFrom.has(t?.owner_id)||t?.isShared; }
 
 // Список всех пользователей — нужен, чтобы показать/выбрать «Ответственного» на карточке
@@ -8840,7 +8843,7 @@ function canEditTask(t){ return isAdmin()||t?.owner_id===currentUser?.id||delega
 // и так свои), а RLS в базе всё равно не даст ему прочитать чужие профили за пределами организации.
 let allProfiles=[];
 async function loadAllProfiles(){
-  if(!isAdmin()&&!isManagerRole())return;
+  if(!isAdmin()&&!isManagerRole()&&!isHeadRole())return;
   try{
     const { data, error } = await sb.from('profiles').select('id,full_name,email,role');
     if(!error)allProfiles=data||[];
@@ -8856,7 +8859,7 @@ function profileName(id){
 function renderOwnerSelect(currentOwnerId){
   const wrap=document.getElementById('c-owner-wrap');
   if(!wrap)return;
-  if(!isAdmin()&&!isManagerRole()){ wrap.style.display='none'; return; }
+  if(!isAdmin()&&!isManagerRole()&&!isHeadRole()){ wrap.style.display='none'; return; }
   wrap.style.display='';
   const sel=document.getElementById('c-owner');
   const options=[...allProfiles];
@@ -9329,7 +9332,7 @@ async function saveClientToDb() {
     const existingClient=S.clients.find(x=>x.id===editClientId);
     const existingOwner=existingClient?existingClient.owner_id:null;
     const ownerSelect=document.getElementById('c-owner');
-    dbData.owner_id=((isAdmin()||isManagerRole())&&ownerSelect&&ownerSelect.value)?ownerSelect.value:existingOwner;
+    dbData.owner_id=((isAdmin()||isManagerRole()||isHeadRole())&&ownerSelect&&ownerSelect.value)?ownerSelect.value:existingOwner;
     const reassigned=dbData.owner_id!==existingOwner;
     // Запоминаем прежний статус ДО перезаписи — иначе сравнивать будет не с чем.
     const prevStatus=(existingClient||{}).status||'unknown';
@@ -9938,10 +9941,10 @@ async function initApp() {
     localInit();
     initRealtime();
     const sortOwnerOpt=document.getElementById('sort-owner-opt');
-    if(sortOwnerOpt)sortOwnerOpt.style.display=(isAdmin()||isManagerRole())?'':'none';
+    if(sortOwnerOpt)sortOwnerOpt.style.display=(isAdmin()||isManagerRole()||isHeadRole())?'':'none';
     const ownerFilterSel=document.getElementById('owner-filter');
     if(ownerFilterSel){
-      if(isAdmin()||isManagerRole()){
+      if(isAdmin()||isManagerRole()||isHeadRole()){
         ownerFilterSel.style.display='';
         const extra=allProfiles.filter(p=>p.id!==currentUser.id).map(p=>`<option value="${p.id}">${esc(p.full_name||p.email)}</option>`).join('');
         ownerFilterSel.innerHTML=`<option value="">Ответственный: все</option><option value="__none__">⚠️ Без ответственного</option><option value="${currentUser.id}">${esc(currentProfile?.full_name||currentUser.email)} (вы)</option>${extra}`;
@@ -9953,7 +9956,7 @@ async function initApp() {
     if (emailEl) {
       const _nm = currentProfile?.full_name || '';
       const _rl = currentProfile?.role || '';
-      const _rm = {admin:'Администратор',administrator:'Администратор',manager:'Руководитель',user:'Пользователь'};
+      const _rm = {admin:'Администратор',administrator:'Администратор',manager:'Руководитель',user:'Руководитель подразделения'};
       const _rt = _rm[_rl] || _rl;
       emailEl.innerHTML = (_nm?`<div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:3px;line-height:1.3">${esc(_nm)}</div>`:'')
         + `<div style="word-break:break-all">${esc(currentUser?.email||'')}</div>`
