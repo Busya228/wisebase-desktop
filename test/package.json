@@ -1,0 +1,10 @@
+{
+  "name": "wisebase-crm-tests",
+  "private": true,
+  "scripts": {
+    "test": "node run-all.js"
+  },
+  "dependencies": {
+    "playwright": "^1.64.0"
+  }
+}

@@ -5,8 +5,8 @@ name: Release desktop app
 # Запускается при ЛЮБОМ обычном `git push` в main, если изменилось само
 # приложение (app/, main.js, package.json, build/). Ни версию, ни теги вручную
 # поднимать не нужно:
-#   • номер версии считается сам: <major>.<minor> из package.json + номер
-#     запуска workflow (29.0.2, 29.0.3, ...) — каждый релиз всегда новее;
+#   • номер версии: ровно тот, что в package.json ("version"), если такой ещё
+#     не выпускали; иначе автоматически <major>.<minor>.<номер запуска>;
 #   • Windows и macOS собираются параллельно и заливаются в черновик релиза;
 #   • когда ВСЕ файлы залиты, черновик публикуется автоматически — только
 #     после этого установленные приложения видят обновление (никто не получит
@@ -38,9 +38,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - id: v
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          BASE=$(node -p "require('./package.json').version.split('.').slice(0,2).join('.')")
-          echo "version=${BASE}.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+          # Номер версии:
+          #  • если версии из package.json (например 29.1.0) ещё нет в релизах —
+          #    выпускаем ровно её;
+          #  • если она уже выпущена — автоматически <major>.<minor>.<номер запуска>.
+          V=$(node -p "require('./package.json').version")
+          if gh release view "v$V" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            V="$(echo "$V" | cut -d. -f1-2).${{ github.run_number }}"
+          fi
+          echo "Версия релиза: $V"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
 
   build:
     needs: version
@@ -67,6 +77,9 @@ jobs:
     needs: [version, build]
     runs-on: ubuntu-latest
     steps:
-      - run: gh release edit "v${{ needs.version.outputs.version }}" --repo "${{ github.repository }}" --draft=false --latest
+      - uses: actions/checkout@v4
+      # Описание релиза («Что нового») берётся из RELEASE_NOTES.md — его же
+      # пользователи видят в окне «Доступна новая версия приложения».
+      - run: gh release edit "v${{ needs.version.outputs.version }}" --repo "${{ github.repository }}" --notes-file RELEASE_NOTES.md --draft=false --latest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

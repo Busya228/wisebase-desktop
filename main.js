@@ -7,7 +7,7 @@
 // окно грузит страницу оттуда — для браузерного движка это обычный "секурный"
 // источник (как localhost), и всё, что уже работает в вебе (SW, кеш, уведомления
 // Notification API), работает и тут без переделок кода приложения.
-const { app, BrowserWindow, Tray, Menu, shell, nativeImage, session, dialog, Notification } = require('electron');
+const { app, BrowserWindow, Tray, Menu, shell, nativeImage, session, dialog, ipcMain } = require('electron');
 const path = require('path');
 const http = require('http');
 const fs = require('fs');
@@ -15,6 +15,18 @@ const { autoUpdater } = require('electron-updater');
 
 const APP_DIR = path.join(__dirname, 'app');
 const ICON_PNG = path.join(__dirname, 'build', 'icon.png');
+
+// Настройки десктоп-обёртки (режим окна и т.п.) — хранятся у пользователя в
+// папке данных приложения, переживают обновления и перезапуски.
+const SETTINGS_FILE = path.join(app.getPath('userData'), 'desktop-settings.json');
+function loadDesktopSettings() {
+  try { return Object.assign({ windowMode: 'windowed' }, JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'))); }
+  catch (_) { return { windowMode: 'windowed' }; }
+}
+function saveDesktopSettings() {
+  try { fs.writeFileSync(SETTINGS_FILE, JSON.stringify(desktopSettings, null, 2)); } catch (_) {}
+}
+const desktopSettings = loadDesktopSettings();
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -73,6 +85,7 @@ function createWindow() {
     icon,
     backgroundColor: '#0F766E',
     webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -85,7 +98,23 @@ function createWindow() {
     },
     show: false,
     autoHideMenuBar: true,
+    // «Полный экран» из Настройки → Приложение → Режим окна: без рамки с
+    // заголовком и без панели задач. Выбор запоминается между запусками.
+    fullscreen: desktopSettings.windowMode === 'fullscreen',
   });
+
+  // Любая смена режима (F11, настройка, кнопка в панели) запоминается и
+  // сообщается странице — чтобы обновить настройку и выезжающую панель.
+  const onFsChange = () => {
+    if (isQuitting) return;
+    desktopSettings.windowMode = mainWindow.isFullScreen() ? 'fullscreen' : 'windowed';
+    saveDesktopSettings();
+    sendDesktopState();
+  };
+  mainWindow.on('enter-full-screen', onFsChange);
+  mainWindow.on('leave-full-screen', onFsChange);
+  mainWindow.on('maximize', sendDesktopState);
+  mainWindow.on('unmaximize', sendDesktopState);
   mainWindow.setMenuBarVisibility(false);
   attachShortcuts(mainWindow.webContents);
 
@@ -151,6 +180,60 @@ function createAppMenu() {
     { label: 'Окно', role: 'windowMenu' },
   ]));
 }
+
+// ============================================================
+// Раздел «🖥️ Приложение» в Настройках CRM (вместо убранной строки меню).
+// Страница вызывает window.wisebaseDesktop.action('...') из preload.js —
+// здесь выполняются только действия из белого списка и только для главного окна.
+// ============================================================
+const ZOOM_STEP = 0.5;
+function zoomPercent(wc) { return Math.round(Math.pow(1.2, wc.getZoomLevel()) * 100); }
+
+const DESKTOP_ACTIONS = {
+  reload:        (w) => w.webContents.reload(),
+  forceReload:   (w) => w.webContents.reloadIgnoringCache(),
+  zoomIn:        (w) => w.webContents.setZoomLevel(w.webContents.getZoomLevel() + ZOOM_STEP),
+  zoomOut:       (w) => w.webContents.setZoomLevel(w.webContents.getZoomLevel() - ZOOM_STEP),
+  zoomReset:     (w) => w.webContents.setZoomLevel(0),
+  fullscreen:    (w) => w.setFullScreen(!w.isFullScreen()),
+  setFullscreen: (w) => w.setFullScreen(true),
+  setWindowed:   (w) => w.setFullScreen(false),
+  devtools:      (w) => w.webContents.toggleDevTools(),
+  minimize:      (w) => w.minimize(),
+  maximize:      (w) => (w.isMaximized() ? w.unmaximize() : w.maximize()),
+  hideToTray:    (w) => w.hide(),
+  checkUpdates:  ()  => checkForUpdates(true),
+  quit:          ()  => { isQuitting = true; app.quit(); },
+};
+
+function desktopInfo(w) {
+  return {
+    version: app.getVersion(),
+    zoom: zoomPercent(w.webContents),
+    fullscreen: w.isFullScreen(),
+    maximized: w.isMaximized(),
+    windowMode: desktopSettings.windowMode,
+    platform: process.platform,
+    updatesSupported: updatesSupported(),
+    portable: isPortable,
+  };
+}
+
+function sendDesktopState() {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('wb:state', desktopInfo(mainWindow));
+}
+
+ipcMain.handle('wb:action', (event, name) => {
+  if (!mainWindow || event.sender !== mainWindow.webContents) return null;
+  const fn = DESKTOP_ACTIONS[name];
+  if (!fn) return null;
+  fn(mainWindow);
+  return desktopInfo(mainWindow);
+});
+ipcMain.handle('wb:info', (event) => {
+  if (!mainWindow || event.sender !== mainWindow.webContents) return null;
+  return desktopInfo(mainWindow);
+});
 
 // Горячие клавиши, которые раньше давало меню «Вид».
 function attachShortcuts(wc) {
@@ -231,6 +314,19 @@ function checkForUpdates(manual) {
   autoUpdater.checkForUpdates().catch(() => {});
 }
 
+// «Что нового» из описания релиза на GitHub (RELEASE_NOTES.md) — приходит
+// как HTML или текст; превращаем в короткий список для окна обновления.
+function formatReleaseNotes(raw) {
+  if (!raw) return '';
+  if (Array.isArray(raw)) raw = raw.map(n => (n && n.note) || '').join('\n');
+  const text = String(raw)
+    .replace(/<li[^>]*>/gi, '\n• ').replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|h\d)>/gi, '\n')
+    .replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+    .split('\n').map(l => l.trim().replace(/^[-*]\s+/, '• ')).filter(Boolean).join('\n');
+  if (!text) return '';
+  return '\n\nЧто нового:\n' + (text.length > 700 ? text.slice(0, 700) + '…' : text);
+}
+
 async function promptUpdate(force) {
   const info = updateReady || updateForMac;
   if (!info || promptOpen) return;
@@ -240,13 +336,14 @@ async function promptUpdate(force) {
 
   promptOpen = true;
   const ready = !!updateReady;
+  const notes = formatReleaseNotes(info.releaseNotes);
   const { response } = await dialog.showMessageBox(mainWindow, {
     type: 'info',
     title: 'Обновление WiseBase CRM',
     message: 'Доступна новая версия приложения. Обновить?',
     detail: ready
-      ? `Новая версия: ${info.version} (у вас ${app.getVersion()}).\nПриложение перезапустится примерно за 10 секунд — переустанавливать ничего не нужно, все данные сохранятся.`
-      : `Новая версия: ${info.version} (у вас ${app.getVersion()}).\nОткроется страница загрузки — скачайте архив и замените приложение в папке «Программы».`,
+      ? `Новая версия: ${info.version} (у вас ${app.getVersion()}).\nПриложение перезапустится примерно за 10 секунд — переустанавливать ничего не нужно, все данные сохранятся.${notes}`
+      : `Новая версия: ${info.version} (у вас ${app.getVersion()}).\nОткроется страница загрузки — скачайте архив и замените приложение в папке «Программы».${notes}`,
     buttons: ready ? ['Обновить', 'Позже'] : ['Скачать', 'Позже'],
     defaultId: 0,
     cancelId: 1,
