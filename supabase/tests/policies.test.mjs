@@ -43,7 +43,7 @@ insert into public.offers(text,owner_id,client_id) values ('O m2','00000000-0000
 insert into public.client_history(client_id,text) values (2,'h');
 insert into public.audit_log(txt) values ('a');
 `, 'schema');
-for (const f of ['01_security_audit.sql','realtime_setup.sql','02_security_hardening.sql','02_security_hardening.sql','04_reports.sql','04_reports.sql','05_roles.sql','05_roles.sql','01_security_audit.sql']) { await ex(fs.readFileSync(new URL('../'+f, import.meta.url),'utf8'), f); console.log('ran', f); }
+for (const f of ['01_security_audit.sql','realtime_setup.sql','02_security_hardening.sql','02_security_hardening.sql','04_reports.sql','04_reports.sql','05_roles.sql','05_roles.sql','06_user_settings.sql','06_user_settings.sql','01_security_audit.sql']) { await ex(fs.readFileSync(new URL('../'+f, import.meta.url),'utf8'), f); console.log('ran', f); }
 const U = { admin:'00000000-0000-0000-0000-00000000000a', head:'00000000-0000-0000-0000-00000000000b', m1:'00000000-0000-0000-0000-000000000001', m2:'00000000-0000-0000-0000-000000000002' };
 let fails = 0;
 async function as(who, sql) {
@@ -111,6 +111,15 @@ r = await as('head', `update profiles set role='administrator' where id='${U.hea
 r = await as('admin', `update profiles set role='user' where id='${U.m2}' returning role`); check(!r.err && r.rows?.[0]?.role==='user', 'администратор назначает роль в CRM', r);
 await as('admin', `update profiles set role='manager' where id='${U.m2}'`);
 r = await as('m1', `select count(*)::int c from wb_backup_triggers`); check(!!r.err, 'резервная копия из CRM недоступна', r);
+// --- Личные настройки (06_user_settings.sql) ---
+await db.exec(`reset role; insert into auth.users values ('${U.m1}','m1@x'),('${U.m2}','m2@x') on conflict do nothing`);
+r = await as('m1', `insert into user_settings(settings) values ('{"crm_theme":"t3"}') returning user_id`); check(!r.err && r.rows?.[0]?.user_id===U.m1, 'сотрудник сохраняет свои настройки', r);
+r = await as('m1', `insert into user_settings(user_id,settings) values ('${U.m2}','{}')`); check(!!r.err, 'нельзя записать настройки за коллегу', r);
+r = await as('m2', `select count(*)::int c from user_settings`); check(r.rows?.[0].c===0, 'чужие настройки не видны', r);
+r = await as('admin', `select count(*)::int c from user_settings`); check(r.rows?.[0].c===0, 'даже администратору чужие настройки не видны', r);
+r = await as('m2', `update user_settings set settings='{}' where user_id='${U.m1}'`); check(r.n===0, 'чужие настройки не изменить', r);
+r = await as('m1', `update user_settings set settings='{"crm_theme":"t5"}' where user_id='${U.m1}'`); check(r.n===1, 'свои настройки меняются', r);
+r = await as('anon', `select count(*)::int c from user_settings`); check(!!r.err || r.rows?.[0].c===0, 'без входа настроек не видно', r);
 // --- Роли сотрудников в CRM (05_roles.sql) ---
 r = await as('admin', `select wb_set_user_role('${U.m2}','user')`); check(!r.err, 'администратор меняет роль через «Роли сотрудников»', r);
 r = await db.query(`select role from profiles where id='${U.m2}'`); check(r.rows[0].role==='user', 'роль действительно сохранилась', r.rows);

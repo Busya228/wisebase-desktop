@@ -771,6 +771,43 @@ body.col-resizing *{cursor:col-resize!important}
 @media(max-width:600px){.stats-grid{grid-template-columns:1fr}}
 .stat-card{ background:var(--card); border:1px solid var(--border); border-radius:var(--radius-l); padding:18px; box-shadow:var(--sh-s); }
 .stat-card.full{grid-column:1/-1}
+.st-2col{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.st-2col>.an-card{margin-bottom:16px;min-width:0}
+@media(max-width:900px){.st-2col{grid-template-columns:1fr;gap:0}}
+.sr-b-plan{background:var(--border);opacity:.9}
+.sr-b-cur{background:var(--amber)}
+.sr-b-fut{background:var(--blue)}
+.st-legend{position:absolute;top:0;right:0;display:flex;gap:10px;font-size:11px;color:var(--t2)}
+.st-table{width:100%;border-collapse:collapse;font-size:13px}
+.st-table th{font-size:11px;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.04em;text-align:right;padding:6px 8px;border-bottom:1px solid var(--border);white-space:nowrap}
+.st-table th:first-child,.st-table td:first-child{text-align:left;padding-left:0}
+.st-table td{padding:9px 8px;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap}
+.st-table tr:last-child td{border-bottom:none}
+.st-table td.st-name{font-weight:600;white-space:normal}
+.st-table td.st-won{color:var(--green);font-weight:600}
+.st-conv{display:inline-flex;align-items:center;gap:6px}
+.st-conv .conv-bar-wrap{width:60px}
+.st-scroll{overflow-x:auto}
+#chart-deals,#sr-dyn{margin-top:18px}
+#chart-deals .bar-lbl,#sr-dyn .bar-lbl{bottom:-20px}
+#chart-plan .plan-month,#sr-plan .plan-month{min-width:118px}
+#sr-c2 .conv-name{min-width:118px;flex:1}
+.st-note{font-size:11px;color:var(--t3);margin-top:12px}
+#stats-period-lbl{font-size:12px;color:var(--t3)}
+.st-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.st-controls select{width:auto;min-width:200px;font-size:13px;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-s);background:var(--card);color:var(--text)}
+.st-period-lbl{font-size:12px;color:var(--t3)}
+.sr-k-up{color:var(--green)!important}.sr-k-dn{color:var(--red)!important}
+.sr-prev{position:absolute;left:0;right:0;border-top:2px dashed var(--t3);opacity:.8;pointer-events:none}
+.sr-heat{border-collapse:separate;border-spacing:3px;font-size:12px;width:100%}
+.sr-heat th{font-size:10px;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.03em;padding:2px 4px;white-space:nowrap;text-align:center}
+.sr-heat th:first-child,.sr-heat td:first-child{text-align:left;font-weight:600;color:var(--text);font-size:12px;text-transform:none;letter-spacing:0;white-space:nowrap;padding-right:10px}
+.sr-heat td.c{text-align:center;border-radius:6px;padding:6px 4px;font-weight:600;min-width:44px}
+.sr-heat td.ok{background:var(--green-bg,#e6f4ee);color:var(--green)}
+.sr-heat td.warn{background:var(--amber-bg,#fdf3e1);color:var(--amber)}
+.sr-heat td.bad{background:var(--red-bg,#fdeaea);color:var(--red)}
+.sr-heat td.na{background:var(--bg);color:var(--t3);font-weight:400}
+.sr-heat tr.sel td:first-child{color:var(--accent)}
 .stat-card h4{font-size:12px;font-weight:600;color:var(--t2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:14px}
 .chart-wrap{position:relative;height:var(--chart-h);display:flex;align-items:flex-end;gap:6px;padding-bottom:24px}
 .bar-col{display:flex;flex-direction:column;align-items:center;flex:1;height:100%;justify-content:flex-end;gap:4px;position:relative}
@@ -1618,6 +1655,8 @@ button,a,select,label{touch-action:manipulation}
 .login-form{display:flex;flex-direction:column;gap:12px}
 .login-input{padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius-s);background:var(--bg);color:var(--text);font-size:14px;outline:none}
 .login-btn{padding:11px;background:var(--accent);color:var(--accent-fg);border:none;border-radius:var(--radius-s);font-size:14px;font-weight:600;cursor:pointer}
+.login-remember{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--t2);cursor:pointer;user-select:none;margin:-2px 0 0 2px}
+.login-remember input{width:16px;height:16px;margin:0;accent-color:var(--accent);cursor:pointer}
 .login-link{text-align:center;font-size:12px;color:var(--t2);text-decoration:underline;cursor:pointer}
 .form-error{margin:0;font-size:12px;color:#ef4444;min-height:16px}
 
@@ -1710,6 +1749,9 @@ button,a,select,label{touch-action:manipulation}
       <input id="login-password" type="password" placeholder="Пароль" autocomplete="current-password"
         class="login-input"
         onkeydown="if(event.key==='Enter')loginUser()">
+      <label class="login-remember" title="Не нужно вводить email и пароль при каждом запуске. На чужом компьютере снимите галочку.">
+        <input type="checkbox" id="login-remember" checked> Запомнить меня
+      </label>
       <p id="login-error" class="form-error"></p>
       <button onclick="loginUser()"
         class="login-btn">
@@ -2345,32 +2387,201 @@ button,a,select,label{touch-action:manipulation}
   </div>
 
   <div id="page-stats" class="page">
-    <div class="toolbar"><span class="tlbl">Статистика и отчёты</span></div>
-    <div class="page-scroll"><div class="stats-grid">
-      <div class="stat-card full">
-        <h4>Динамика предложений по месяцам (₽)</h4>
-        <div class="chart-wrap" id="chart-deals"></div>
+    <div class="toolbar">
+      <span class="tlbl">Статистика</span>
+      <div class="rep-tabs" style="border-bottom:none;padding:0;margin-left:16px">
+        <div class="rep-tab active" id="st-tab-reports" onclick="switchStTab('reports')">По отчётам</div>
+        <div class="rep-tab" id="st-tab-offers" onclick="switchStTab('offers')">По предложениям</div>
       </div>
-      <div class="stat-card">
-        <h4>Распределение по статусам предложений</h4>
-        <div id="chart-conv"></div>
+    </div>
+
+    <!-- Вкладка: По отчётам — динамика из загруженных .xlsx (Аналитика → Отчёты) -->
+    <div id="st-panel-reports" class="page-scroll">
+      <div class="st-controls">
+        <div class="an-seg" id="sr-period" role="group" aria-label="Период">
+          <button data-m="6" class="active" onclick="setSrPeriod(6)">6 мес</button>
+          <button data-m="12" onclick="setSrPeriod(12)">12 мес</button>
+          <button data-m="0" onclick="setSrPeriod(0)">Все месяцы</button>
+        </div>
+        <select id="sr-mgr" aria-label="Менеджер" onchange="setSrMgr(this.value)"></select>
+        <span id="sr-period-lbl" class="st-period-lbl"></span>
       </div>
-      <div class="stat-card">
-        <h4>План / Факт по выручке</h4>
-        <div id="chart-plan"></div>
-        <div style="margin-top:10px;text-align:right">
-          <button class="plan-edit" onclick="openPlanEdit()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:1em;height:1em;vertical-align:-0.15em;flex:none"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.4 2.6a2.1 2.1 0 1 1 3 3L11 15l-4 1 1-4Z"/></svg> Изменить план</button>
+      <div id="sr-empty" class="an-card" style="display:none">
+        <div class="an-empty" style="padding:28px 0">
+          Пока нет загруженных отчётов. Загрузите .xlsx в <a href="#" onclick="event.preventDefault();showPage('analytics');switchAnTab('reports')">Аналитика → Отчёты</a> — здесь появится динамика по месяцам, рейтинг и тепловая карта менеджеров.
         </div>
       </div>
-      <div class="stat-card full">
-        <h4>Срез по каналам продаж</h4>
+      <div id="sr-body">
+        <div class="an-kpis" id="sr-kpis"></div>
+
+        <div class="an-card">
+          <div class="an-card-head">
+            <div>
+              <h4 style="margin-bottom:4px">Динамика по месяцам</h4>
+              <div class="an-hint" id="sr-dyn-hint">План и факт отгрузок, прошлый год — для сравнения</div>
+            </div>
+            <div class="an-seg" id="sr-dyn-mode">
+              <button data-v="ship" class="active" onclick="setSrDynMode('ship')">Отгрузки</button>
+              <button data-v="orders" onclick="setSrDynMode('orders')">Заказы</button>
+              <button data-v="unship" onclick="setSrDynMode('unship')">Неотгружено</button>
+            </div>
+          </div>
+          <div class="chart-wrap" id="sr-dyn"></div>
+        </div>
+
+        <div class="st-2col">
+          <div class="an-card">
+            <div class="an-card-head">
+              <div>
+                <h4 style="margin-bottom:4px">Выполнение плана по месяцам</h4>
+                <div class="an-hint">Факт отгрузок ÷ план и прирост к прошлому году</div>
+              </div>
+            </div>
+            <div id="sr-plan"></div>
+          </div>
+          <div class="an-card">
+            <div class="an-card-head">
+              <div>
+                <h4 style="margin-bottom:4px">Конверсия С2 по месяцам</h4>
+                <div class="an-hint">Средняя по менеджерам: факт и прогноз на месяц вперёд</div>
+              </div>
+            </div>
+            <div id="sr-c2"></div>
+          </div>
+        </div>
+
+        <div class="an-card">
+          <div class="an-card-head">
+            <div>
+              <h4 style="margin-bottom:4px">Рейтинг менеджеров за период</h4>
+              <div class="an-hint">Суммы за все месяцы периода; выполнение и прирост пересчитаны из сумм</div>
+            </div>
+            <div class="an-seg" id="sr-rank-sort">
+              <button data-v="fact" class="active" onclick="setSrRankSort('fact')">По факту</button>
+              <button data-v="pct" onclick="setSrRankSort('pct')">По выполнению</button>
+              <button data-v="growth" onclick="setSrRankSort('growth')">По приросту</button>
+            </div>
+          </div>
+          <div id="sr-rank"></div>
+        </div>
+
+        <div class="an-card">
+          <div class="an-card-head">
+            <div>
+              <h4 style="margin-bottom:4px">Выполнение плана: менеджеры × месяцы</h4>
+              <div class="an-hint">Зелёный — 100% и выше, жёлтый — от 80%, красный — ниже 80%, серый — нет данных или плана</div>
+            </div>
+          </div>
+          <div id="sr-heat"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Вкладка: По предложениям (данные CRM) -->
+    <div id="st-panel-offers" class="page-scroll" style="display:none">
+      <div class="st-controls">
+        <div class="an-seg" id="stats-period" role="group" aria-label="Период статистики">
+          <button data-m="3" onclick="setStatsPeriod(3)">3 мес</button>
+          <button data-m="6" class="active" onclick="setStatsPeriod(6)">6 мес</button>
+          <button data-m="12" onclick="setStatsPeriod(12)">12 мес</button>
+          <button data-m="0" onclick="setStatsPeriod(0)">Всё время</button>
+        </div>
+        <span id="stats-period-lbl" class="st-period-lbl"></span>
+      </div>
+      <div class="an-kpis" id="st-kpis"></div>
+
+      <div class="an-card">
+        <div class="an-card-head">
+          <div>
+            <h4 style="margin-bottom:4px">Динамика предложений по месяцам</h4>
+            <div class="an-hint">Согласованные и отклонённые предложения по дате предложения</div>
+          </div>
+          <div class="an-seg" id="deals-mode">
+            <button data-v="sum" class="active" onclick="setDealsMode('sum')">По сумме ₽</button>
+            <button data-v="count" onclick="setDealsMode('count')">По количеству</button>
+          </div>
+        </div>
+        <div class="chart-wrap" id="chart-deals"></div>
+      </div>
+
+      <div class="st-2col">
+        <div class="an-card">
+          <div class="an-card-head">
+            <div>
+              <h4 style="margin-bottom:4px">Статусы предложений</h4>
+              <div class="an-hint">Доля и сумма предложений за период</div>
+            </div>
+          </div>
+          <div id="chart-conv"></div>
+        </div>
+        <div class="an-card">
+          <div class="an-card-head">
+            <div>
+              <h4 style="margin-bottom:4px">План / Факт по выручке</h4>
+              <div class="an-hint">Факт — согласованные предложения месяца</div>
+            </div>
+            <button class="plan-edit" onclick="openPlanEdit()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:1em;height:1em;vertical-align:-0.15em;flex:none"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.4 2.6a2.1 2.1 0 1 1 3 3L11 15l-4 1 1-4Z"/></svg> Изменить план</button>
+          </div>
+          <div id="chart-plan"></div>
+        </div>
+      </div>
+
+      <div class="an-card">
+        <div class="an-card-head">
+          <div>
+            <h4 style="margin-bottom:4px">По ответственным</h4>
+            <div class="an-hint">Кто сколько предлагает и доводит до согласования за период</div>
+          </div>
+          <div class="an-seg" id="st-owner-sort">
+            <button data-v="agreed" class="active" onclick="setStOwnerSort('agreed')">По согласованным</button>
+            <button data-v="conv" onclick="setStOwnerSort('conv')">По конверсии</button>
+            <button data-v="count" onclick="setStOwnerSort('count')">По количеству</button>
+          </div>
+        </div>
+        <div id="st-owners"></div>
+      </div>
+
+      <div class="st-2col">
+        <div class="an-card">
+          <div class="an-card-head">
+            <div>
+              <h4 style="margin-bottom:4px">Зависшие предложения</h4>
+              <div class="an-hint">Статус «Предложено» дольше 30 дней — пора вернуться к клиенту</div>
+            </div>
+          </div>
+          <div id="st-stale"></div>
+        </div>
+        <div class="an-card">
+          <div class="an-card-head">
+            <div>
+              <h4 style="margin-bottom:4px">Топ клиентов</h4>
+              <div class="an-hint">По сумме согласованных предложений за период</div>
+            </div>
+          </div>
+          <div id="st-top"></div>
+        </div>
+      </div>
+
+      <div class="an-card">
+        <div class="an-card-head">
+          <div>
+            <h4 style="margin-bottom:4px">Срез по каналам продаж</h4>
+            <div class="an-hint">Клиенты и потенциал — по всей базе, согласовано — за период</div>
+          </div>
+        </div>
         <div id="chart-channel"></div>
       </div>
-      <div class="stat-card full">
-        <h4>Срез по формату клиента</h4>
+
+      <div class="an-card">
+        <div class="an-card-head">
+          <div>
+            <h4 style="margin-bottom:4px">Срез по формату клиента</h4>
+            <div class="an-hint">Клиенты и потенциал — по всей базе, согласовано — за период</div>
+          </div>
+        </div>
         <div id="chart-format"></div>
       </div>
-    </div></div>
+    </div>
   </div>
 
 </div><!-- /content -->
@@ -3046,7 +3257,7 @@ const TODAY=today();
 // новой присланной версии). Показывается в Профиле, чтобы можно было сверить «то, что
 // открыто на телефоне» с «тем, что прислали только что» — без гадания, обновился
 // ли сайт после деплоя на хостинг.
-const APP_BUILD='12.10.2026 · ver 29.1.5';
+const APP_BUILD='12.10.2026 · ver 29.2.0';
 // Преобразует Date обратно в строку 'YYYY-MM-DD' по ЛОКАЛЬНЫМ компонентам (не UTC) — пара к today().
 function dateToLocalStr(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 // Парсит строку 'YYYY-MM-DD' как ЛОКАЛЬНУЮ дату (полночь по местному времени), а не UTC.
@@ -3748,6 +3959,7 @@ function loadTheme(){const raw=localStorage.getItem('crm_theme');setTheme(raw===
 const UIK='crm_ui_prefs_v1';
 let UIP={};
 function loadUIPrefs(){
+  UIP={};   // заново: при входе под другим сотрудником не должны остаться чужие настройки
   try{const s=localStorage.getItem(UIK);if(s)UIP=JSON.parse(s)||{};}catch(e){UIP={};}
   if(UIP.clientView)clientView=UIP.clientView;
   if(UIP.dashView)dashView=UIP.dashView;
@@ -6935,18 +7147,313 @@ function exportCalendarICS(){
 
 // === STATS ===
 function getMonthKey(d){return d.slice(0,7);}
-function renderStats(){ renderDealsChart(); renderConvChart(); renderPlanChart(); renderChannelChart(); renderFormatChart(); }
-function renderDealsChart(){
-  const months=[];const now=new Date();
-  for(let i=5;i>=0;i--){const d=new Date(now.getFullYear(),now.getMonth()-i,1);months.push({key:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`,lbl:d.toLocaleDateString('ru-RU',{month:'short',year:'2-digit'})});}
-  const data=months.map(m=>{const agreed=S.offers.filter(o=>o.status==='agreed'&&o.date&&getMonthKey(o.date)===m.key).reduce((s,o)=>s+Number(o.amount||0),0);const declined=S.offers.filter(o=>o.status==='declined'&&o.date&&getMonthKey(o.date)===m.key).reduce((s,o)=>s+Number(o.amount||0),0);return{...m,agreed,declined};});
-  const maxV=Math.max(...data.map(d=>d.agreed+d.declined),1);
-  const el=document.getElementById('chart-deals');
-  el.innerHTML=data.map(d=>{const agreedH=Math.round((d.agreed/maxV)*160);const declinedH=Math.round((d.declined/maxV)*160);return`<div class="bar-col">${d.agreed?`<div class="bar-val">${d.agreed>=1000?Math.round(d.agreed/1000)+'к':d.agreed}</div>`:''}<div style="display:flex;align-items:flex-end;gap:2px;width:100%"><div class="bar bar-won" style="height:${agreedH}px;flex:1" title="Согласовано: ${R(d.agreed)}"></div>${d.declined?`<div class="bar bar-lost" style="height:${declinedH}px;flex:1" title="Отклонено: ${R(d.declined)}"></div>`:''}</div><div class="bar-lbl">${d.lbl}</div></div>`;}).join('');
-  el.innerHTML+=`<div style="position:absolute;top:0;right:0;display:flex;gap:8px;font-size:11px;color:var(--t2)"><span style="color:var(--green)">■ Согласовано</span><span style="color:var(--red)">■ Отклонено</span></div>`;
+// === СТАТИСТИКА ПО ОТЧЁТАМ — динамика из загруженных .xlsx (Аналитика → Отчёты) ===
+// «Отчёты» показывают один выбранный месяц/квартал/год. Здесь — то же самое во
+// времени: как менялись отгрузки, заказы, неотгруженные и С2 от месяца к месяцу,
+// кто из менеджеров стабильно выполняет план. Период отсчитывается от последнего
+// месяца, за который загружен отчёт (отчёт обычно приходит после закрытия месяца).
+let stTab='reports', srMonthsN=6, srMgr='', srDynMode='ship', srRankSort='fact';
+const SR_MON=['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'];
+const SR_MON_FULL=['январь','февраль','март','апрель','май','июнь','июль','август','сентябрь','октябрь','ноябрь','декабрь'];
+function srMln(v){ if(v===null||v===undefined)return '—'; const a=Math.abs(v); return a>=1e6?(v/1e6).toFixed(1).replace('.',',')+' млн ₽':a>=1e3?Math.round(v/1e3)+' тыс ₽':Math.round(v)+' ₽'; }
+function srPct(v){ return v===null||v===undefined||!isFinite(v)?'—':Math.round(v*100)+'%'; }
+// Все загруженные месяцы по порядку: [{y,m (0..11), key, rows:[parsed]}]
+function srAllMonths(){
+  const api=window.repApi; if(!api)return [];
+  const data=api.getData()||{};
+  return Object.keys(data).map(k=>{ const m=/^(\d{4})-(\d{1,2})$/.exec(k); const e=data[k];
+      return m&&e&&Array.isArray(e.rows)&&e.rows.length?{y:+m[1],m:+m[2]-1,key:k,rows:e.rows.map(api.parseRow)}:null; })
+    .filter(Boolean).sort((a,b)=>(a.y*12+a.m)-(b.y*12+b.m));
 }
-function renderConvChart(){ const total=S.offers.length||1; const el=document.getElementById('chart-conv'); el.innerHTML=OFFER_STATUSES.map(st=>{const n=S.offers.filter(o=>o.status===st).length;const pct=Math.round((n/total)*100);return`<div class="conv-row"><span class="sdot ${OFFER_STATUS_M[st].dot}" style="margin-top:2px"></span><span class="conv-name">${OFFER_STATUS_M[st].l}</span><div class="conv-bar-wrap"><div class="conv-bar-fill" style="width:${pct}%"></div></div><span class="conv-pct">${pct}%</span><span style="font-size:12px;color:var(--t2);min-width:20px">${n}</span></div>`;}).join(''); }
-function renderPlanChart(){ const now=new Date(); const months=[]; for(let i=5;i>=0;i--){const d=new Date(now.getFullYear(),now.getMonth()-i,1);months.push({key:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`,lbl:d.toLocaleDateString('ru-RU',{month:'long'})});} const el=document.getElementById('chart-plan'); el.innerHTML=months.map(m=>{const plan=S.plans[m.key]||0;const fact=S.offers.filter(o=>o.status==='agreed'&&o.date&&getMonthKey(o.date)===m.key).reduce((s,o)=>s+Number(o.amount||0),0);const pct=plan?Math.min(Math.round((fact/plan)*100),100):0;const cls=pct>=100?'ok':pct>=60?'warn':'danger';return`<div class="plan-row"><span class="plan-month">${m.lbl}</span><div class="plan-prog-wrap"><div class="plan-prog ${cls}" style="width:${pct}%"></div></div><span class="plan-nums">${R(fact)} / ${R(plan)}</span></div>`;}).join(''); }
+// Окно периода: N календарных месяцев, заканчивая последним загруженным (пропуски — пустые месяцы).
+function srWindow(all){
+  if(!all.length)return [];
+  const last=all[all.length-1], lastIdx=last.y*12+last.m;
+  const firstIdx=srMonthsN?lastIdx-srMonthsN+1:all[0].y*12+all[0].m;
+  const byIdx=new Map(all.map(e=>[e.y*12+e.m,e]));
+  const out=[];
+  for(let i=firstIdx;i<=lastIdx;i++){ const y=Math.floor(i/12), m=i-y*12; out.push(byIdx.get(i)||{y,m,key:y+'-'+(m+1),rows:null}); }
+  return out;
+}
+function srTotals(rows){
+  const sum=f=>{ let t=null; rows.forEach(r=>{ if(r[f]!==null&&r[f]!==undefined) t=(t||0)+r[f]; }); return t; };
+  const avg=f=>{ const a=rows.map(r=>r[f]).filter(v=>v!==null&&v!==undefined); return a.length?a.reduce((x,y)=>x+y,0)/a.length:null; };
+  const plan=sum('planShip'), fact=sum('factShip'), prev=sum('prevShip');
+  return { plan, fact, prev, orders:sum('factOrders'),
+    unshipPast:sum('unshipPast'), unshipCur:sum('unshipCur'), unshipFut:sum('unshipFut'),
+    unship:(sum('unshipPast')||0)+(sum('unshipCur')||0)+(sum('unshipFut')||0),
+    pct: plan>0&&fact!==null?fact/plan:null, growth: prev>0&&fact!==null?fact/prev-1:null,
+    c2:avg('c2fact'), c2f:avg('c2fore') };
+}
+function srMonthRows(e){ return !e.rows?[]:srMgr?e.rows.filter(r=>r.name===srMgr):e.rows; }
+function srLbl(e,short){ return short?SR_MON[e.m]+' '+String(e.y).slice(2):SR_MON_FULL[e.m]+' '+e.y; }
+function switchStTab(tab){
+  if(UIP.statsTab!==tab) saveUIPref('statsTab',tab);
+  stTab=tab;
+  document.getElementById('st-tab-reports').classList.toggle('active',tab==='reports');
+  document.getElementById('st-tab-offers').classList.toggle('active',tab==='offers');
+  document.getElementById('st-panel-reports').style.display=tab==='reports'?'':'none';
+  document.getElementById('st-panel-offers').style.display=tab==='offers'?'':'none';
+  if(tab==='reports') renderStatsReports(); else renderStatsOffers();
+}
+function setSrPeriod(n){ srMonthsN=n; saveUIPref('srMonths',n); renderStatsReports(); }
+function setSrMgr(v){ srMgr=v||''; renderStatsReports(); }
+function setSrDynMode(m){ srDynMode=m; saveUIPref('srDynMode',m); renderStatsReports(); }
+function setSrRankSort(m){ srRankSort=m; saveUIPref('srRankSort',m); renderStatsReports(); }
+function renderStatsReports(){
+  if(UIP.srMonths!==undefined) srMonthsN=Number(UIP.srMonths)||0;
+  if(UIP.srDynMode) srDynMode=UIP.srDynMode;
+  if(UIP.srRankSort) srRankSort=UIP.srRankSort;
+  const segs=[['#sr-period','m',String(srMonthsN)],['#sr-dyn-mode','v',srDynMode],['#sr-rank-sort','v',srRankSort]];
+  segs.forEach(([sel,attr,val])=>document.querySelectorAll(sel+' button').forEach(b=>b.classList.toggle('active',b.dataset[attr]===val)));
+  const all=srAllMonths(), win=srWindow(all);
+  const empty=document.getElementById('sr-empty'), body=document.getElementById('sr-body');
+  if(!empty||!body)return;
+  if(!win.length){ empty.style.display=''; body.style.display='none'; document.getElementById('sr-period-lbl').textContent=''; document.getElementById('sr-mgr').style.display='none'; return; }
+  empty.style.display='none'; body.style.display='';
+  // Список менеджеров — из отчётов за период
+  const names=[...new Set(win.flatMap(e=>(e.rows||[]).map(r=>r.name)))].sort((a,b)=>a.localeCompare(b,'ru'));
+  if(srMgr&&!names.includes(srMgr)) srMgr='';
+  const sel=document.getElementById('sr-mgr'); sel.style.display='';
+  sel.innerHTML=`<option value="">Все менеджеры (${names.length})</option>`+names.map(n=>`<option value="${esc(n)}"${n===srMgr?' selected':''}>${esc(n)}</option>`).join('');
+  const withData=win.filter(e=>e.rows);
+  document.getElementById('sr-period-lbl').textContent=srLbl(win[0])+' — '+srLbl(win[win.length-1])+' · месяцев с отчётом: '+withData.length+' из '+win.length;
+  const months=win.map(e=>({e, t:e.rows?srTotals(srMonthRows(e)):null}));
+  srRenderKpis(months); srRenderDyn(months); srRenderPlan(months); srRenderC2(months);
+  srRenderRank(withData); srRenderHeat(win, names);
+}
+function srRenderKpis(months){
+  const el=document.getElementById('sr-kpis'); if(!el)return;
+  const has=months.filter(x=>x.t);
+  const sum=f=>has.reduce((s,x)=>s+(x.t[f]||0),0);
+  const plan=sum('plan'), fact=sum('fact'), prev=has.reduce((s,x)=>s+(x.t.prev||0),0), orders=sum('orders');
+  const pct=plan>0?fact/plan:null, growth=prev>0?fact/prev-1:null;
+  const last=has[has.length-1], prevM=has[has.length-2];
+  const metPlan=has.filter(x=>x.t.pct!==null&&x.t.pct>=1).length, withPlan=has.filter(x=>x.t.pct!==null).length;
+  const c2=has.map(x=>x.t.c2).filter(v=>v!==null), c2avg=c2.length?c2.reduce((a,b)=>a+b,0)/c2.length:null;
+  const lastDelta=last&&prevM&&prevM.t.fact>0&&last.t.fact!==null?last.t.fact/prevM.t.fact-1:null;
+  const cards=[
+    {lbl:'Факт отгрузок',val:srMln(fact),sub:growth===null?'за период':(growth<0?'▼ ':'▲ ')+srPct(Math.abs(growth))+' к прошлому году',cls:growth===null?'':growth<0?'sr-k-dn':'sr-k-up'},
+    {lbl:'Выполнение плана',val:srPct(pct),sub:plan?srMln(fact)+' из '+srMln(plan):'план в отчётах не указан',accent:pct!==null&&pct>=1},
+    {lbl:'Месяцев с планом ≥100%',val:withPlan?metPlan+' из '+withPlan:'—',sub:'месяцы, где план выполнен'},
+    {lbl:'Факт заказов',val:srMln(orders),sub:'за период'},
+    {lbl:'Неотгружено сейчас',val:last?srMln(last.t.unship):'—',sub:last&&last.t.unshipPast?'⚠ '+srMln(last.t.unshipPast)+' прошлых периодов':'на конец '+(last?srLbl(last.e):'периода')},
+    {lbl:'Последний месяц',val:last?srMln(last.t.fact):'—',sub:last?srLbl(last.e)+(lastDelta!==null?' · '+(lastDelta<0?'▼ ':'▲ ')+srPct(Math.abs(lastDelta))+' к '+SR_MON_FULL[prevM.e.m]:''):'',cls:lastDelta===null?'':lastDelta<0?'sr-k-dn':'sr-k-up'},
+    {lbl:'Средний С2',val:srPct(c2avg),sub:'среднее по месяцам'},
+  ];
+  el.innerHTML=cards.map(c=>`<div class="an-kpi${c.accent?' accent':''}"><span class="k-lbl">${c.lbl}</span><span class="k-val">${c.val}</span><span class="k-sub ${c.cls||''}">${c.sub}</span></div>`).join('');
+}
+function srRenderDyn(months){
+  const el=document.getElementById('sr-dyn'); if(!el)return;
+  const H=150;
+  const hint=document.getElementById('sr-dyn-hint');
+  let series, legend;
+  if(srDynMode==='orders'){ series=[['orders','bar-won','Факт заказов']]; legend=`<span style="color:var(--green)">■ Факт заказов</span>`; if(hint)hint.textContent='Сумма заказов по месяцам'; }
+  else if(srDynMode==='unship'){ series=[['unshipPast','bar-lost','Прошлых периодов'],['unshipCur','sr-b-cur','Текущего месяца'],['unshipFut','sr-b-fut','Будущих периодов']]; legend=`<span style="color:var(--red)">■ Прошлых периодов</span><span style="color:var(--amber)">■ Текущего месяца</span><span style="color:var(--blue)">■ Будущих периодов</span>`; if(hint)hint.textContent='Остаток неотгруженных заказов на конец каждого месяца'; }
+  else { series=[['plan','sr-b-plan','План'],['fact','bar-won','Факт']]; legend=`<span style="color:var(--t3)">■ План</span><span style="color:var(--green)">■ Факт</span><span style="color:var(--t2)">┅ Прошлый год</span>`; if(hint)hint.textContent='План и факт отгрузок; пунктир — факт того же месяца прошлого года'; }
+  const vals=months.flatMap(x=>x.t?series.map(s=>x.t[s[0]]||0).concat(srDynMode==='ship'?[x.t.prev||0]:[]):[0]);
+  const maxV=Math.max(...vals,1);
+  el.innerHTML=months.map(({e,t})=>{
+    if(!t) return `<div class="bar-col" title="${srLbl(e)}: отчёт не загружен"><div class="bar-val" style="color:var(--t3);font-weight:400">нет отчёта</div><div style="height:2px;width:100%;background:var(--border)"></div><div class="bar-lbl">${srLbl(e,true)}</div></div>`;
+    const bars=series.map(([f,cls,l])=>`<div class="bar ${cls}" style="height:${Math.round((t[f]||0)/maxV*H)}px;flex:1" title="${srLbl(e)} — ${l}: ${srMln(t[f])}"></div>`).join('');
+    const prevLine=srDynMode==='ship'&&t.prev?`<div class="sr-prev" style="bottom:${Math.round(t.prev/maxV*H)}px" title="${srLbl(e)} — прошлый год: ${srMln(t.prev)}"></div>`:'';
+    const top=srDynMode==='ship'?t.fact:srDynMode==='orders'?t.orders:t.unship;
+    return `<div class="bar-col"><div class="bar-val">${top?srMln(top).replace(' ₽','').replace(' млн','м').replace(' тыс','к'):''}</div><div style="display:flex;align-items:flex-end;gap:2px;width:100%;position:relative">${bars}${prevLine}</div><div class="bar-lbl">${srLbl(e,true)}</div></div>`;
+  }).join('')+`<div class="st-legend">${legend}</div>`;
+}
+function srRenderPlan(months){
+  const el=document.getElementById('sr-plan'); if(!el)return;
+  el.innerHTML=months.map(({e,t})=>{
+    if(!t) return `<div class="plan-row"><span class="plan-month">${srLbl(e)}</span><span class="an-empty" style="padding:0;flex:1;text-align:left">отчёт не загружен</span></div>`;
+    const real=t.pct!==null?Math.round(t.pct*100):null, w=real===null?0:Math.min(real,100);
+    const cls=real===null?'':real>=100?'ok':real>=80?'warn':'danger';
+    const g=t.growth!==null?`<span class="rep-delta ${t.growth<0?'dn':'up'}">${t.growth<0?'▼':'▲'} ${srPct(Math.abs(t.growth))}</span>`:'';
+    return `<div class="plan-row"><span class="plan-month">${srLbl(e)}</span><div class="plan-prog-wrap"><div class="plan-prog ${cls}" style="width:${w}%"></div></div><span class="plan-nums">${real===null?'—':real+'%'} ${g}</span></div>`;
+  }).join('');
+}
+function srRenderC2(months){
+  const el=document.getElementById('sr-c2'); if(!el)return;
+  const has=months.filter(x=>x.t&&(x.t.c2!==null||x.t.c2f!==null));
+  if(!has.length){ el.innerHTML='<div class="an-empty">В отчётах нет колонок С2</div>'; return; }
+  const max=Math.max(...has.flatMap(x=>[x.t.c2||0,x.t.c2f||0]),0.0001);
+  el.innerHTML=months.map(({e,t})=>{
+    if(!t||(t.c2===null&&t.c2f===null)) return `<div class="conv-row"><span class="conv-name">${srLbl(e)}</span><span style="font-size:12px;color:var(--t3)">нет данных</span></div>`;
+    return `<div class="conv-row"><span class="conv-name">${srLbl(e)}</span>
+      <div style="display:flex;flex-direction:column;gap:3px;width:140px"><div class="conv-bar-wrap" style="width:100%"><div class="conv-bar-fill" style="width:${Math.round((t.c2||0)/max*100)}%"></div></div><div class="conv-bar-wrap" style="width:100%"><div class="conv-bar-fill" style="width:${Math.round((t.c2f||0)/max*100)}%;background:var(--green)"></div></div></div>
+      <span style="font-size:12px;min-width:110px;text-align:right">факт <b>${srPct(t.c2)}</b> · прогноз <b>${srPct(t.c2f)}</b></span></div>`;
+  }).join('')+`<div class="st-note"><span style="color:var(--accent)">■</span> факт &nbsp; <span style="color:var(--green)">■</span> прогноз на следующий месяц</div>`;
+}
+function srRenderRank(withData){
+  const el=document.getElementById('sr-rank'); if(!el)return;
+  const api=window.repApi;
+  // repAggregate ждёт исходные строки отчёта
+  const data=api.getData();
+  const entries=withData.map(e=>data[e.key]).filter(Boolean);
+  const mgrs=api.repAggregate(entries.length===1?[entries[0],{rows:[]}]:entries);
+  // сколько месяцев каждый выполнил план
+  const met=new Map();
+  withData.forEach(e=>e.rows.forEach(r=>{ const pct=r.planShip>0&&r.factShip!==null?r.factShip/r.planShip:null;
+    const g=met.get(r.name)||{m:0,n:0}; if(pct!==null){ g.n++; if(pct>=1) g.m++; } met.set(r.name,g); }));
+  const key={fact:m=>m.factShip||0, pct:m=>m.planPct===null?-1:m.planPct, growth:m=>m.growth===null?-9:m.growth}[srRankSort];
+  mgrs.sort((a,b)=>key(b)-key(a));
+  const dirs=new Set(mgrs.map(m=>m.dir).filter(Boolean));
+  el.innerHTML=`<div class="st-scroll"><table class="st-table"><thead><tr><th>#</th><th style="text-align:left">Менеджер</th>${dirs.size>1?'<th style="text-align:left">Направление</th>':''}<th>Факт отгрузок</th><th>План</th><th>Выполнение</th><th>Прирост г/г</th><th>Заказы</th><th>План ≥100%</th></tr></thead><tbody>${mgrs.map((m,i)=>{
+    const pct=m.planPct!==null?Math.round(m.planPct*100):null; const g=met.get(m.name)||{m:0,n:0};
+    return `<tr${m.name===srMgr?' style="background:var(--bg)"':''}><td style="color:var(--t3)">${i+1}</td><td class="st-name" style="text-align:left;cursor:pointer" onclick="setSrMgr(${esc(JSON.stringify(m.name))})" title="Показать только этого менеджера">${esc(m.name)}</td>${dirs.size>1?`<td style="text-align:left;color:var(--t2)">${esc(m.dir||'')}</td>`:''}
+      <td class="st-won">${srMln(m.factShip)}</td><td>${srMln(m.planShip)}</td>
+      <td>${pct===null?'—':`<span class="st-conv"><span class="conv-bar-wrap"><span class="conv-bar-fill" style="display:block;width:${Math.min(pct,100)}%;background:${pct>=100?'var(--green)':pct>=80?'var(--amber)':'var(--red)'}"></span></span>${pct}%</span>`}</td>
+      <td>${m.growth===null?'—':`<span class="rep-delta ${m.growth<0?'dn':'up'}">${m.growth<0?'▼':'▲'} ${srPct(Math.abs(m.growth))}</span>`}</td>
+      <td>${srMln(m.factOrders)}</td><td>${g.n?g.m+' из '+g.n:'—'}</td></tr>`;
+  }).join('')}</tbody></table></div>`;
+}
+function srRenderHeat(win, names){
+  const el=document.getElementById('sr-heat'); if(!el)return;
+  const rowsFor=n=>win.map(e=>{ const r=e.rows&&e.rows.find(x=>x.name===n); return r&&r.planShip>0&&r.factShip!==null?r.factShip/r.planShip:null; });
+  const order=names.map(n=>{ const v=rowsFor(n); const a=v.filter(x=>x!==null); return {n,v,avg:a.length?a.reduce((s,x)=>s+x,0)/a.length:-1}; }).sort((a,b)=>b.avg-a.avg);
+  el.innerHTML=`<div class="st-scroll"><table class="sr-heat"><thead><tr><th>Менеджер</th>${win.map(e=>`<th>${srLbl(e,true)}</th>`).join('')}</tr></thead><tbody>${order.map(o=>`<tr${o.n===srMgr?' class="sel"':''}><td style="cursor:pointer" onclick="setSrMgr(${esc(JSON.stringify(o.n))})">${esc(o.n)}</td>${o.v.map((p,i)=>{
+      const cls=p===null?'na':p>=1?'ok':p>=0.8?'warn':'bad';
+      return `<td class="c ${cls}" title="${esc(o.n)} — ${srLbl(win[i])}: ${p===null?'нет данных':srPct(p)}">${p===null?'·':Math.round(p*100)}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div>`;
+}
+function renderStats(){
+  if(UIP.statsTab==='offers'||UIP.statsTab==='reports') stTab=UIP.statsTab;
+  switchStTab(stTab);
+}
+// === СТАТИСТИКА (по предложениям) — в том же стиле, что «Аналитика» ===
+// Период (3/6/12 мес или всё время) действует на показатели, графики и срезы;
+// сохраняется в личных настройках (UIP → user_settings).
+let statsMonthsN=6, dealsMode='sum', stOwnerSort='agreed';
+function statsMonths(){
+  const n=statsMonthsN||12, now=new Date(), out=[];
+  for(let i=n-1;i>=0;i--){const d=new Date(now.getFullYear(),now.getMonth()-i,1);
+    out.push({key:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`,lbl:d.toLocaleDateString('ru-RU',{month:'short',year:'2-digit'}),full:d.toLocaleDateString('ru-RU',{month:'long',year:'numeric'})});}
+  return out;
+}
+function statsInPeriod(o){
+  if(!statsMonthsN) return true;
+  if(!o.date) return false;
+  return getMonthKey(o.date)>=statsMonths()[0].key;
+}
+function statsOffers(){ return (S.offers||[]).filter(statsInPeriod); }
+function statsPeriodLabel(){
+  if(!statsMonthsN) return 'за всё время';
+  const m=statsMonths(); return m[0].full+' — '+m[m.length-1].full;
+}
+function setStatsPeriod(n){ statsMonthsN=n; saveUIPref('statsMonths',n); renderStatsOffers(); }
+function setDealsMode(m){ dealsMode=m; saveUIPref('statsDealsMode',m); renderDealsChart(); syncStatsSegs(); }
+function setStOwnerSort(m){ stOwnerSort=m; saveUIPref('statsOwnerSort',m); renderStOwners(); syncStatsSegs(); }
+function syncStatsSegs(){
+  document.querySelectorAll('#stats-period button').forEach(b=>b.classList.toggle('active',Number(b.dataset.m)===statsMonthsN));
+  document.querySelectorAll('#deals-mode button').forEach(b=>b.classList.toggle('active',b.dataset.v===dealsMode));
+  document.querySelectorAll('#st-owner-sort button').forEach(b=>b.classList.toggle('active',b.dataset.v===stOwnerSort));
+  const l=document.getElementById('stats-period-lbl'); if(l) l.textContent=statsPeriodLabel();
+}
+function renderStatsOffers(){
+  if(UIP.statsMonths!==undefined) statsMonthsN=Number(UIP.statsMonths)||0;
+  if(UIP.statsDealsMode) dealsMode=UIP.statsDealsMode;
+  if(UIP.statsOwnerSort) stOwnerSort=UIP.statsOwnerSort;
+  syncStatsSegs();
+  renderStKpis(); renderDealsChart(); renderConvChart(); renderPlanChart(); renderStOwners(); renderStStale(); renderStTop(); renderChannelChart(); renderFormatChart();
+}
+const sumAmt=arr=>arr.reduce((s,o)=>s+Number(o.amount||0),0);
+function renderStKpis(){
+  const el=document.getElementById('st-kpis'); if(!el)return;
+  const offs=statsOffers();
+  const ag=offs.filter(o=>o.status==='agreed'), de=offs.filter(o=>o.status==='declined'), pr=offs.filter(o=>o.status==='proposed');
+  const decided=ag.length+de.length;
+  const conv=decided?Math.round(ag.length/decided*100):0;
+  const avg=ag.length?sumAmt(ag)/ag.length:0;
+  // Выполнение плана — только по месяцам, где план задан (иначе факт без плана завышает %).
+  const months=(statsMonthsN?statsMonths():[]).filter(m=>Number(S.plans[m.key]||0)>0);
+  const plan=months.reduce((s,m)=>s+Number(S.plans[m.key]||0),0);
+  const fact=months.length?sumAmt(ag.filter(o=>o.date&&months.some(m=>m.key===getMonthKey(o.date)))):0;
+  const cards=[
+    {lbl:'Предложений',val:offs.length,sub:'на '+RM(sumAmt(offs))},
+    {lbl:'Согласовано',val:RM(sumAmt(ag)),sub:`${ag.length} ${pluralRu(ag.length,'предложение','предложения','предложений')}`,accent:true},
+    {lbl:'Конверсия',val:conv+'%',sub:'согласовано ÷ (согласовано + отклонено)'},
+    {lbl:'Средний чек',val:RM(avg),sub:'по согласованным'},
+    {lbl:'Ждут решения',val:RM(sumAmt(pr)),sub:`${pr.length} ${pluralRu(pr.length,'предложение','предложения','предложений')} «Предложено»`},
+  ];
+  if(statsMonthsN) cards.push({lbl:'План выполнен',val:plan?Math.round(fact/plan*100)+'%':'—',sub:plan?`${RM(fact)} из ${RM(plan)} · месяцев с планом: ${months.length}`:'план на период не задан'});
+  el.innerHTML=cards.map(c=>`<div class="an-kpi${c.accent?' accent':''}"><span class="k-lbl">${c.lbl}</span><span class="k-val">${c.val}</span><span class="k-sub">${c.sub}</span></div>`).join('');
+}
+function renderDealsChart(){
+  const el=document.getElementById('chart-deals'); if(!el)return;
+  const months=statsMonths();
+  const val=arr=>dealsMode==='count'?arr.length:sumAmt(arr);
+  const data=months.map(m=>{
+    const inM=(S.offers||[]).filter(o=>o.date&&getMonthKey(o.date)===m.key);
+    return {...m, agreed:val(inM.filter(o=>o.status==='agreed')), declined:val(inM.filter(o=>o.status==='declined'))};
+  });
+  const maxV=Math.max(...data.map(d=>Math.max(d.agreed,d.declined)),1);
+  const H=150;
+  const short=v=>dealsMode==='count'?String(v):(v>=1e6?(Math.round(v/1e5)/10).toString().replace('.',',')+'м':v>=1000?Math.round(v/1000)+'к':String(Math.round(v)));
+  const tip=v=>dealsMode==='count'?v+' шт.':R(v);
+  el.innerHTML=data.map(d=>`<div class="bar-col">${d.agreed?`<div class="bar-val">${short(d.agreed)}</div>`:''}<div style="display:flex;align-items:flex-end;gap:2px;width:100%"><div class="bar bar-won" style="height:${Math.round(d.agreed/maxV*H)}px;flex:1" title="${esc(d.full)} — согласовано: ${tip(d.agreed)}"></div><div class="bar bar-lost" style="height:${Math.round(d.declined/maxV*H)}px;flex:1" title="${esc(d.full)} — отклонено: ${tip(d.declined)}"></div></div><div class="bar-lbl">${d.lbl}</div></div>`).join('')
+    +`<div class="st-legend"><span style="color:var(--green)">■ Согласовано</span><span style="color:var(--red)">■ Отклонено</span></div>`;
+}
+function renderConvChart(){
+  const el=document.getElementById('chart-conv'); if(!el)return;
+  const offs=statsOffers();
+  if(!offs.length){ el.innerHTML='<div class="an-empty">За период предложений нет</div>'; return; }
+  el.innerHTML=OFFER_STATUSES.map(st=>{
+    const arr=offs.filter(o=>o.status===st), pct=Math.round(arr.length/offs.length*100);
+    return `<div class="conv-row"><span class="sdot ${OFFER_STATUS_M[st].dot}" style="margin-top:2px"></span><span class="conv-name">${OFFER_STATUS_M[st].l}</span><div class="conv-bar-wrap"><div class="conv-bar-fill" style="width:${pct}%"></div></div><span class="conv-pct">${pct}%</span><span style="font-size:12px;color:var(--t2);min-width:20px;text-align:right">${arr.length}</span><span style="font-size:12px;color:var(--t2);min-width:90px;text-align:right">${RM(sumAmt(arr))}</span></div>`;
+  }).join('');
+}
+function planMonths(){ return statsMonthsN?statsMonths():statsMonths().slice(-6); }
+function renderPlanChart(){
+  const el=document.getElementById('chart-plan'); if(!el)return;
+  el.innerHTML=planMonths().map(m=>{
+    const plan=Number(S.plans[m.key]||0);
+    const fact=sumAmt((S.offers||[]).filter(o=>o.status==='agreed'&&o.date&&getMonthKey(o.date)===m.key));
+    const real=plan?Math.round(fact/plan*100):0, pct=Math.min(real,100);
+    const cls=real>=100?'ok':real>=60?'warn':'danger';
+    return `<div class="plan-row"><span class="plan-month">${esc(m.full.replace(/ г\.?$/,''))}</span><div class="plan-prog-wrap"><div class="plan-prog ${cls}" style="width:${pct}%"></div></div><span class="plan-nums">${RM(fact)} / ${RM(plan)}${plan?` · ${real}%`:''}</span></div>`;
+  }).join('');
+}
+function renderStOwners(){
+  const el=document.getElementById('st-owners'); if(!el)return;
+  const by=new Map();
+  statsOffers().forEach(o=>{ const k=o.owner_id||'__none__'; if(!by.has(k)) by.set(k,[]); by.get(k).push(o); });
+  if(!by.size){ el.innerHTML='<div class="an-empty">За период предложений нет</div>'; return; }
+  const rows=[...by].map(([id,arr])=>{
+    const ag=arr.filter(o=>o.status==='agreed'), de=arr.filter(o=>o.status==='declined'), pr=arr.filter(o=>o.status==='proposed');
+    const dec=ag.length+de.length;
+    return {name:id==='__none__'?'Без ответственного':profileName(id), count:arr.length, agreed:sumAmt(ag), agreedN:ag.length, conv:dec?Math.round(ag.length/dec*100):null, pending:sumAmt(pr)};
+  });
+  const key={agreed:r=>r.agreed, conv:r=>r.conv==null?-1:r.conv, count:r=>r.count}[stOwnerSort]||(r=>r.agreed);
+  rows.sort((a,b)=>key(b)-key(a)||b.agreed-a.agreed);
+  el.innerHTML=`<div class="st-scroll"><table class="st-table"><thead><tr><th>Ответственный</th><th>Предложений</th><th>Согласовано</th><th>Конверсия</th><th>Ждут решения</th></tr></thead><tbody>${rows.map(r=>`<tr>
+      <td class="st-name">${esc(r.name)}</td><td>${r.count}</td><td class="st-won">${RM(r.agreed)}</td>
+      <td>${r.conv==null?'—':`<span class="st-conv"><span class="conv-bar-wrap"><span class="conv-bar-fill" style="display:block;width:${r.conv}%"></span></span>${r.conv}%</span>`}</td>
+      <td>${RM(r.pending)}</td></tr>`).join('')}</tbody></table></div>`;
+}
+function stClientName(id){ const c=(S.clients||[]).find(x=>x.id===id); return c?(c.company||c.name||'—'):'— без клиента —'; }
+function renderStStale(){
+  const el=document.getElementById('st-stale'); if(!el)return;
+  const now=new Date(); now.setHours(0,0,0,0);
+  const rows=(S.offers||[]).filter(o=>o.status==='proposed'&&o.date)
+    .map(o=>({o,d:Math.floor((now-new Date(o.date+'T00:00:00'))/864e5)})).filter(r=>r.d>30).sort((a,b)=>b.d-a.d);
+  if(!rows.length){ el.innerHTML='<div class="an-empty">Зависших нет — по всем предложениям есть решение или прошло меньше 30 дней.</div>'; return; }
+  el.innerHTML=rows.slice(0,10).map(({o,d})=>`<div class="stuck-row"${o.clientId?` onclick="openClientFromAnalytics(${o.clientId})"`:''}>
+      <span class="stuck-name">${esc(stClientName(o.clientId))}</span>
+      <span class="stuck-meta">${esc(o.text||'')}${o.text?' · ':''}${RM(Number(o.amount||0))}</span>
+      <span class="stuck-days">${d} ${pluralRu(d,'день','дня','дней')}</span></div>`).join('')
+    +`<div class="st-note">Всего: ${rows.length} на ${RM(sumAmt(rows.map(r=>r.o)))}${rows.length>10?' · показаны первые 10':''}</div>`;
+}
+function renderStTop(){
+  const el=document.getElementById('st-top'); if(!el)return;
+  const by=new Map();
+  statsOffers().filter(o=>o.status==='agreed'&&o.clientId).forEach(o=>by.set(o.clientId,(by.get(o.clientId)||0)+Number(o.amount||0)));
+  const rows=[...by].sort((a,b)=>b[1]-a[1]).slice(0,10);
+  if(!rows.length){ el.innerHTML='<div class="an-empty">За период согласованных предложений нет</div>'; return; }
+  const max=rows[0][1]||1;
+  el.innerHTML=rows.map(([id,v],i)=>`<div class="stuck-row" onclick="openClientFromAnalytics(${id})">
+      <span class="stuck-meta" style="min-width:18px">${i+1}</span>
+      <span class="stuck-name">${esc(stClientName(id))}</span>
+      <span class="conv-bar-wrap" style="width:80px"><span class="conv-bar-fill" style="display:block;width:${Math.round(v/max*100)}%"></span></span>
+      <span class="stuck-days" style="color:var(--green)">${RM(v)}</span></div>`).join('');
+}
 // Универсальный срез по полю клиента (канал продаж / формат): кол-во клиентов, потенциал, согласованные предложения
 function renderSegmentChart(field,values,elId,emptyHint){
   const getter=field==='channel'?getChannels:field==='format'?getFormats:(c=>[c[field]].filter(Boolean));
@@ -6955,7 +7462,7 @@ function renderSegmentChart(field,values,elId,emptyHint){
     const clients=S.clients.filter(c=>isUnset?!getter(c).length:getter(c).includes(val));
     const clientIds=new Set(clients.map(c=>c.id));
     const potential=clients.reduce((s,c)=>s+Number(c.potential||0),0);
-    const agreed=S.offers.filter(o=>o.status==='agreed'&&clientIds.has(o.clientId)).reduce((s,o)=>s+Number(o.amount||0),0);
+    const agreed=S.offers.filter(o=>o.status==='agreed'&&clientIds.has(o.clientId)&&statsInPeriod(o)).reduce((s,o)=>s+Number(o.amount||0),0);
     return{val,count:clients.length,potential,agreed};
   }).filter(r=>r.count>0);
   const el=document.getElementById(elId);
@@ -6979,14 +7486,14 @@ function renderChannelChart(){
     const clients=S.clients.filter(c=>getChannels(c).includes(val));
     const clientIds=new Set(clients.map(c=>c.id));
     const potential=clients.reduce((s,c)=>s+Number(c.potential||0),0);
-    const agreed=S.offers.filter(o=>o.status==='agreed'&&clientIds.has(o.clientId)).reduce((s,o)=>s+Number(o.amount||0),0);
+    const agreed=S.offers.filter(o=>o.status==='agreed'&&clientIds.has(o.clientId)&&statsInPeriod(o)).reduce((s,o)=>s+Number(o.amount||0),0);
     return{val,count:clients.length,potential,agreed};
   }).filter(r=>r.count>0);
   const noChannel=S.clients.filter(c=>!getChannels(c).length);
   if(noChannel.length){
     const clientIds=new Set(noChannel.map(c=>c.id));
     const potential=noChannel.reduce((s,c)=>s+Number(c.potential||0),0);
-    const agreed=S.offers.filter(o=>o.status==='agreed'&&clientIds.has(o.clientId)).reduce((s,o)=>s+Number(o.amount||0),0);
+    const agreed=S.offers.filter(o=>o.status==='agreed'&&clientIds.has(o.clientId)&&statsInPeriod(o)).reduce((s,o)=>s+Number(o.amount||0),0);
     rows.push({val:'— Не указано —',count:noChannel.length,potential,agreed});
   }
   const el=document.getElementById('chart-channel');
@@ -7382,6 +7889,9 @@ function renderAnalytics(){ renderAnKpis(); renderFunnel(); renderFlow(); render
     repRenderNav();
     const panel=document.getElementById('an-panel-reports');
     if(panel&&panel.style.display!=='none') repRender();
+    // «Статистика → По отчётам» строится из тех же отчётов — обновляем, если открыта.
+    const sp=document.getElementById('page-stats');
+    if(sp&&sp.classList.contains('active')&&typeof renderStatsReports==='function') renderStatsReports();
   };
 
   // Однократный перенос старых «локальных» отчётов в общую базу: у того, кто может
@@ -7589,6 +8099,7 @@ function renderAnalytics(){ renderAnKpis(); renderFunnel(); renderFlow(); render
   }
 
   // Для автотестов: чистые функции расчёта без DOM.
+  window.repApi={getData:()=>repData,parseRow,repAggregate};
   window.__rep={cleanNum,parseRow,repAggregate,plural,migrateLegacy:()=>repMigrateLegacy(),getData:()=>repData,
     setPeriod:(p,y,m)=>{repPeriod=p;repYear=y;repMonth=m;},periodMonths,
     setData:d=>{repData=d;}, render:()=>repRender()};
@@ -7866,8 +8377,8 @@ function renderRegions(){
   </div>`;
   el.innerHTML=summary+body+legend;
 }
-function openPlanEdit(){ const now=new Date(); const months=[]; for(let i=5;i>=0;i--){const d=new Date(now.getFullYear(),now.getMonth()-i,1);months.push({key:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`,lbl:d.toLocaleDateString('ru-RU',{month:'long',year:'numeric'})});} document.getElementById('plan-form').innerHTML=months.map(m=>`<div class="fg"><label for="plan-${m.key}">${m.lbl}</label><input type="text" inputmode="numeric" id="plan-${m.key}" value="${formatAmountStatic(S.plans[m.key])}" placeholder="0" oninput="formatAmountInput(this)"></div>`).join(''); document.getElementById('m-plan').classList.add('open'); }
-function savePlan(){ document.querySelectorAll('[id^="plan-"]').forEach(el=>{const k=el.id.replace('plan-','');S.plans[k]=parseAmount(el.value);}); save(); closeModal('m-plan'); toast('План сохранён'); renderPlanChart(); }
+function openPlanEdit(){ const months=planMonths().map(m=>({key:m.key,lbl:m.full})); document.getElementById('plan-form').innerHTML=months.map(m=>`<div class="fg"><label for="plan-${m.key}">${m.lbl}</label><input type="text" inputmode="numeric" id="plan-${m.key}" value="${formatAmountStatic(S.plans[m.key])}" placeholder="0" oninput="formatAmountInput(this)"></div>`).join(''); document.getElementById('m-plan').classList.add('open'); }
+function savePlan(){ document.querySelectorAll('[id^="plan-"]').forEach(el=>{const k=el.id.replace('plan-','');S.plans[k]=parseAmount(el.value);}); save(); closeModal('m-plan'); toast('План сохранён'); renderPlanChart(); renderStKpis(); }
 
 // === EXCEL EXPORT / IMPORT (без изменений) ===
 function buildExportWorkbook(){
@@ -8387,8 +8898,10 @@ function makeOfflineSbStub(){
       // пользователем и увидеть свои локальные данные, а не экран входа.
       getSession: async () => {
         try{
-          const k = Object.keys(localStorage).find(x => /^sb-.*-auth-token$/.test(x));
-          if(k){ const v = JSON.parse(localStorage.getItem(k)); if(v && v.user) return { data:{ session:v }, error:null }; }
+          for (const st of [localStorage, sessionStorage]) {
+            const k = Object.keys(st).find(x => /^sb-.*-auth-token$/.test(x));
+            if(k){ const v = JSON.parse(st.getItem(k)); if(v && v.user) return { data:{ session:v }, error:null }; }
+          }
         }catch(_){}
         return { data:{ session:null }, error:null };
       },
@@ -8417,8 +8930,29 @@ function sbFetchWithTimeout(input, init){
   }
   return fetch(input, Object.assign({}, init, { signal }));
 }
+// «Запомнить меня» на экране входа. Включено (по умолчанию) — вход хранится в
+// localStorage и переживает перезапуск: при следующем открытии приложение входит
+// само. Выключено — вход хранится в sessionStorage и забывается, когда закрыли
+// приложение (или вкладку браузера). Ключ сессии тот же, что у supabase-js по
+// умолчанию, поэтому уже выполненный вход не сбрасывается.
+const WB_REMEMBER_KEY = 'wb_remember_me';
+const WB_LAST_EMAIL_KEY = 'wb_last_email';
+function wbRememberMe(){ try{ return localStorage.getItem(WB_REMEMBER_KEY) !== '0'; }catch(_){ return true; } }
+const wbAuthStorage = {
+  getItem(k){ try{ return localStorage.getItem(k) ?? sessionStorage.getItem(k); }catch(_){ return null; } },
+  setItem(k, v){
+    try{
+      if (wbRememberMe()) { localStorage.setItem(k, v); sessionStorage.removeItem(k); }
+      else { sessionStorage.setItem(k, v); localStorage.removeItem(k); }
+    }catch(_){}
+  },
+  removeItem(k){ try{ localStorage.removeItem(k); sessionStorage.removeItem(k); }catch(_){} },
+};
 const sb = (typeof supabase !== 'undefined' && supabase && supabase.createClient)
-  ? supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { global: { fetch: sbFetchWithTimeout } })
+  ? supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+      global: { fetch: sbFetchWithTimeout },
+      auth: { storage: wbAuthStorage, persistSession: true, autoRefreshToken: true },
+    })
   : makeOfflineSbStub();
 
 // ============================================================
@@ -8601,6 +9135,12 @@ async function loginUser() {
   const errEl = document.getElementById('login-error');
   errEl.textContent = '';
   const btn = document.querySelector('#login-screen button');
+  // Выбор «Запомнить меня» — ДО входа: от него зависит, куда библиотека сохранит сессию.
+  const remember = document.getElementById('login-remember')?.checked !== false;
+  try{
+    localStorage.setItem(WB_REMEMBER_KEY, remember ? '1' : '0');
+    if (remember && email) localStorage.setItem(WB_LAST_EMAIL_KEY, email); else localStorage.removeItem(WB_LAST_EMAIL_KEY);
+  }catch(_){}
   btn.textContent = 'Вход...'; btn.disabled = true;
   const { error } = await sb.auth.signInWithPassword({ email, password });
   btn.textContent = 'Войти'; btn.disabled = false;
@@ -8908,6 +9448,13 @@ async function saveNewPasswordDb() {
 function showLoginScreen() {
   document.getElementById('login-screen').style.display = 'flex';
   document.getElementById('app-root').style.display = 'none';
+  // Подставляем запомненный email и состояние галочки — остаётся ввести только пароль.
+  try{
+    const rem = document.getElementById('login-remember'); if (rem) rem.checked = wbRememberMe();
+    const em = document.getElementById('login-email'), pw = document.getElementById('login-password');
+    const last = localStorage.getItem(WB_LAST_EMAIL_KEY);
+    if (em && last && !em.value) { em.value = last; if (pw) setTimeout(() => pw.focus(), 50); }
+  }catch(_){}
   startLoginBg();
 }
 function hideLoginScreen() {
@@ -9041,6 +9588,102 @@ window.addEventListener('resize',()=>{
   if(ls && ls.style.display!=='none' && lbOn){ stopLoginBg(); startLoginBg(); }
 });
 
+// === ЛИЧНЫЕ НАСТРОЙКИ В БАЗЕ (таблица user_settings, supabase/06_user_settings.sql) ===
+// Тема, вид списков, меню, ширины колонок, свёрнутые разделы, тип задачи по умолчанию,
+// фильтр учёток администратора и т. п. привязаны к учётной записи: настроил один раз —
+// так же на любом устройстве, после обновлений и повторного входа.
+// Как устроено: сами настройки по-прежнему лежат в localStorage (их читает остальной
+// код), а этот блок (1) при входе подтягивает их из базы, (2) после любого изменения
+// через 1,5 с отправляет снимок в базу. Изменения, сделанные без сети, помечаются
+// и уходят в базу при следующем запуске, а не затираются версией с сервера.
+// Режим окна и масштаб десктоп-приложения остаются настройками компьютера.
+const WB_PREF_KEYS = ['crm_theme', 'crm_ui_prefs_v1', 'crm_rail_pinned', 'crm_nav_layout', 'wisebase_admin_view_owners'];
+const WB_PREF_PREFIXES = ['colw:'];
+const WB_PREF_LOCAL_ONLY = ['lastAutoSave'];      // поля crm_ui_prefs_v1, относящиеся к устройству
+const WB_PREFS_OWNER_KEY = 'wb_prefs_owner';      // чьи настройки сейчас на этом устройстве
+const WB_PREFS_DIRTY_KEY = 'wb_prefs_dirty';      // '1' — есть изменения, ещё не попавшие в базу
+function wbIsPrefKey(k){ k = String(k); return WB_PREF_KEYS.includes(k) || WB_PREF_PREFIXES.some(p => k.startsWith(p)); }
+let _prefsApplying = false, _prefsTimer = null, _prefsState = 'idle';   // idle | ok | missing
+let _prefsLastSent = null;   // снимок, который уже есть в базе: без изменений повторно не шлём
+function wbPrefsMissing(err){ return /user_settings|42P01|PGRST205|PGRST204|does not exist|schema cache/i.test(String((err && err.message) || '') + String((err && err.code) || '')); }
+function wbCollectPrefs(){
+  const out = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (!wbIsPrefKey(k)) continue;
+    let v = localStorage.getItem(k);
+    if (k === 'crm_ui_prefs_v1') { try { const o = JSON.parse(v) || {}; WB_PREF_LOCAL_ONLY.forEach(f => delete o[f]); v = JSON.stringify(o); } catch (_) {} }
+    out[k] = v;
+  }
+  return out;
+}
+function wbApplyPrefs(obj){
+  _prefsApplying = true;
+  try {
+    const keep = {};
+    try { const cur = JSON.parse(localStorage.getItem('crm_ui_prefs_v1') || '{}') || {}; WB_PREF_LOCAL_ONLY.forEach(f => { if (cur[f] !== undefined) keep[f] = cur[f]; }); } catch (_) {}
+    const existing = [];
+    for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (wbIsPrefKey(k)) existing.push(k); }
+    existing.forEach(k => { if (!obj || !(k in obj)) localStorage.removeItem(k); });
+    Object.entries(obj || {}).forEach(([k, v]) => {
+      if (!wbIsPrefKey(k) || typeof v !== 'string') return;
+      if (k === 'crm_ui_prefs_v1') { try { v = JSON.stringify(Object.assign(JSON.parse(v) || {}, keep)); } catch (_) {} }
+      localStorage.setItem(k, v);
+    });
+  } finally { _prefsApplying = false; }
+}
+async function wbPushPrefs(){
+  clearTimeout(_prefsTimer); _prefsTimer = null;
+  if (!currentUser || _prefsState === 'missing' || !isOnline()) return false;
+  try {
+    const snap = wbCollectPrefs();
+    const { error } = await sb.from('user_settings').upsert({ user_id: currentUser.id, settings: snap, updated_at: new Date().toISOString() });
+    if (error) { if (wbPrefsMissing(error)) _prefsState = 'missing'; return false; }
+    _prefsLastSent = JSON.stringify(snap);
+    localStorage.removeItem(WB_PREFS_DIRTY_KEY);
+    localStorage.setItem(WB_PREFS_OWNER_KEY, String(currentUser.id));
+    return true;
+  } catch (_) { return false; }
+}
+// Вызывается при входе, ДО применения темы/вида (localInit) — см. initApp().
+async function wbPullPrefs(){
+  if (!currentUser || !isOnline()) return;
+  try {
+    const owner = localStorage.getItem(WB_PREFS_OWNER_KEY);
+    const mine = !owner || owner === String(currentUser.id);
+    const { data, error } = await sb.from('user_settings').select('settings').eq('user_id', currentUser.id).maybeSingle();
+    if (error) { _prefsState = wbPrefsMissing(error) ? 'missing' : 'idle'; return; }
+    _prefsState = 'ok';
+    if (mine && localStorage.getItem(WB_PREFS_DIRTY_KEY) === '1') { await wbPushPrefs(); return; }   // свежие правки без сети — важнее
+    if (data && data.settings && typeof data.settings === 'object') {
+      wbApplyPrefs(data.settings);
+      localStorage.setItem(WB_PREFS_OWNER_KEY, String(currentUser.id));
+      _prefsLastSent = JSON.stringify(wbCollectPrefs());
+    } else {
+      if (!mine) wbApplyPrefs({});   // на устройстве чужие настройки — начинаем с обычного вида
+      await wbPushPrefs();           // первое устройство: сохраняем текущие настройки в базу
+    }
+  } catch (_) { /* нет сети / нет таблицы — работаем с настройками этого устройства */ }
+}
+function wbSchedulePrefsPush(){
+  if (_prefsApplying || !currentUser) return;
+  // Поменялось только служебное (например, время автосохранения) — в базу не шлём.
+  try { if (_prefsLastSent !== null && JSON.stringify(wbCollectPrefs()) === _prefsLastSent) return; } catch (_) {}
+  try { localStorage.setItem(WB_PREFS_DIRTY_KEY, '1'); } catch (_) {}
+  clearTimeout(_prefsTimer);
+  _prefsTimer = setTimeout(() => { wbPushPrefs(); }, 1500);
+}
+// Перехватываем запись настроек в localStorage — так в базу попадает ЛЮБАЯ настройка
+// из списка выше, где бы в коде она ни менялась (и новые места тоже).
+(function(){
+  if (typeof Storage === 'undefined') return;
+  const P = Storage.prototype, set = P.setItem, rem = P.removeItem;
+  P.setItem = function(k, v){ set.call(this, k, v); try { if (this === window.localStorage && wbIsPrefKey(k)) wbSchedulePrefsPush(); } catch (_) {} };
+  P.removeItem = function(k){ rem.call(this, k); try { if (this === window.localStorage && wbIsPrefKey(k)) wbSchedulePrefsPush(); } catch (_) {} };
+})();
+// Закрывают окно/сворачивают — отправляем отложенное изменение сразу.
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && _prefsTimer) wbPushPrefs(); });
+
 const PROFILE_CACHE_KEY='wisebase_profile_cache';
 async function loadProfile() {
   // Профиль нужен для прав доступа (isAdmin / scopedClients). Без сети запрос падает,
@@ -9106,6 +9749,7 @@ async function loadDelegations(){
 let adminViewOwners=null;
 const ADMIN_VIEW_KEY='wisebase_admin_view_owners';
 function loadAdminViewOwners(){
+  adminViewOwners=null;
   try{ const raw=localStorage.getItem(ADMIN_VIEW_KEY); if(raw){ const arr=JSON.parse(raw); if(Array.isArray(arr)&&arr.length) adminViewOwners=new Set(arr.map(String)); } }catch(e){}
 }
 function persistAdminViewOwners(){
@@ -10250,6 +10894,7 @@ async function initApp() {
       const timeout = new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('INIT_SYNC_TIMEOUT')), INIT_SYNC_WAIT_MS); });
       try{
         await Promise.race([(async () => {
+          await wbPullPrefs();         // личные настройки — до localInit(), который их применяет
           await syncFromSupabase();
           await loadAllProfiles();
           await loadDelegations();

@@ -28,6 +28,7 @@ assert(electronMajor >= 44, "Electron актуальный (>= 44): " + pkg.devD
 assert(!/node-version:\s*(1\d|20|21)\b/.test(wf), "в CI Node.js 22+ (нужен для Electron 44)");
 assert(fs.existsSync(path.join(ROOT, "supabase", "04_reports.sql")), "есть SQL для общих отчётов (supabase/04_reports.sql)");
 assert(fs.existsSync(path.join(ROOT, "supabase", "05_roles.sql")), "есть SQL для смены ролей из CRM (supabase/05_roles.sql)");
+assert(fs.existsSync(path.join(ROOT, "supabase", "06_user_settings.sql")), "есть SQL для личных настроек (supabase/06_user_settings.sql)");
 
 // Секреты: приватный VAPID-ключ, сервисный ключ Supabase, токены GitHub.
 const files = [];

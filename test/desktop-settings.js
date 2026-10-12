@@ -5,7 +5,7 @@ const { openApp, launch, assert } = require("./_helpers.js");
 
 const MOCK = `
 window.__deskCalls = [];
-window.__deskState = { version: '29.1.5', zoom: 100, fullscreen: false, maximized: false, windowMode: 'windowed', platform: 'win32', updatesSupported: true, portable: false };
+window.__deskState = { version: '29.2.0', zoom: 100, fullscreen: false, maximized: false, windowMode: 'windowed', platform: 'win32', updatesSupported: true, portable: false };
 window.wisebaseDesktop = {
   isDesktop: true,
   info: async () => Object.assign({}, window.__deskState),
@@ -40,7 +40,7 @@ window.wisebaseDesktop = {
     zoom: document.getElementById("desk-zoom")?.textContent,
   }));
   assert(s1.shown === "", "в десктоп-версии раздел «Приложение» виден");
-  assert(/29\.1\.5/.test(s1.version || ""), "показана версия приложения: " + s1.version);
+  assert(/29\.2\.0/.test(s1.version || ""), "показана версия приложения: " + s1.version);
   assert(s1.zoom === "100%", "показан масштаб: " + s1.zoom);
 
   await page.evaluate(() => desktopAction("zoomIn"));
