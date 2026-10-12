@@ -2,8 +2,13 @@
 const path = require("path");
 const { chromium } = require("playwright");
 
-const APP = process.env.CRM_APP || "file://" + path.resolve(__dirname, "../index.html");
-const CHROME_PATH = process.env.CHROME_PATH || "/usr/local/bin/chromium";
+const fs = require("fs");
+// Приложение лежит в app/index.html (то же, что уходит в десктоп-сборку и на хостинг).
+const APP = process.env.CRM_APP || "file://" + path.resolve(__dirname, "../app/index.html");
+// Свой Chrome/Chromium — только если он реально есть; иначе браузер, встроенный в
+// Playwright (так тесты работают и на GitHub Actions, и на любом компьютере).
+const CHROME_PATH = [process.env.CHROME_PATH, "/usr/local/bin/chromium", "/usr/bin/chromium"]
+  .find(p => { try { return p && fs.existsSync(p); } catch (e) { return false; } }) || undefined;
 
 // Заглушка Supabase — только для тестов, которым нужно детерминированное локальное
 // состояние (офлайн-очередь, undo/redo, права доступа и т.п.), а не реальная сеть.
@@ -45,6 +50,7 @@ async function launch(opts = {}) {
   const browser = await chromium.launch({ executablePath: CHROME_PATH, args: ["--no-sandbox"] });
   const errors = [];
   const context = await browser.newContext();
+  if (opts.init) await context.addInitScript({ content: opts.init });
   if (opts.stub) {
     await context.addInitScript({ content: STUB_SRC });
     // Не даём настоящим библиотекам с CDN (supabase-js, SheetJS) и серверу Supabase

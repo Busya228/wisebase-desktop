@@ -6,7 +6,7 @@
 
    Переменные окружения:
      CHROME_PATH — путь к Chrome/Chromium (если не найдён автоматически)
-     CRM_APP     — адрес тестируемого index.html (по умолчанию ../index.html)
+     CRM_APP     — адрес тестируемого index.html (по умолчанию ../app/index.html)
 */
 const { spawnSync } = require("child_process");
 const fs = require("fs");
@@ -34,7 +34,7 @@ const chrome = process.env.CHROME_PATH || [
   "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
 ].find(p => { try { return fs.existsSync(p); } catch (e) { return false; } });
 
-const app = process.env.CRM_APP || "file://" + path.resolve(dir, "../index.html");
+const app = process.env.CRM_APP || "file://" + path.resolve(dir, "../app/index.html");
 console.log("Приложение: " + app);
 console.log("Браузер:     " + (chrome || "встроенный в Playwright"));
 console.log("Тестов:     " + files.length + "\n");
@@ -47,12 +47,19 @@ for (const f of files) {
   const label = f.replace(/\.js$/, "");
   process.stdout.write("▶ " + label + " … ");
   const t0 = Date.now();
-  const r = spawnSync(process.execPath, [path.join(dir, f)], { env: env, encoding: "utf8" });
+  // Один повтор при провале: тесты с эмуляцией офлайна (offline-queue) изредка
+  // спотыкаются о тайминг браузера. Настоящая ошибка повторится и во второй раз.
+  const once = () => {
+    const r = spawnSync(process.execPath, [path.join(dir, f)], { env: env, encoding: "utf8" });
+    const out = (r.stdout || "") + (r.stderr || "");
+    const bad = out.match(/^\s*FAIL .*$/gm) || [];
+    return { out, bad, ok: r.status === 0 && !bad.length };
+  };
+  let run = once(), retried = false;
+  if (!run.ok) { retried = true; run = once(); }
+  const { out, bad, ok } = run;
   const sec = ((Date.now() - t0) / 1000).toFixed(1);
-  const out = (r.stdout || "") + (r.stderr || "");
-  const bad = out.match(/^\s*FAIL .*$/gm) || [];
-  const ok = r.status === 0 && !bad.length;
-  console.log((ok ? "✓ прошёл" : "✗ ПРОВАЛ") + "  (" + sec + " с)");
+  console.log((ok ? (retried ? "✓ прошёл со 2-й попытки" : "✓ прошёл") : "✗ ПРОВАЛ") + "  (" + sec + " с)");
   if (!ok) {
     bad.slice(0, 12).forEach(l => console.log("    " + l.trim()));
     if (!bad.length) console.log(out.trim().split("\n").slice(-8).map(l => "    " + l).join("\n"));

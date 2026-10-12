@@ -3,3 +3,7 @@ dist/
 *.log
 # Папка с установленным Git (если Git поставлен внутрь проекта) — в репозиторий не нужна
 Git/
+# Тесты: зависимости и логи последнего прогона
+test/node_modules/
+test/last-run-*.log
+supabase/tests/node_modules/

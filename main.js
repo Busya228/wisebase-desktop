@@ -46,32 +46,67 @@ let tray = null;
 let isQuitting = false;
 
 // Локальный статик-сервер: раздаёт файлы из ./app (index.html, sw.js) на
-// 127.0.0.1:<свободный_порт>. Порт выбираем автоматически (0 → ОС выдаёт
-// свободный), чтобы не конфликтовать с другими приложениями на машине.
-function startServer() {
+// 127.0.0.1:<порт>.
+//
+// ПОРТ ДОЛЖЕН БЫТЬ ПОСТОЯННЫМ. Для браузерного движка адрес
+// http://127.0.0.1:<порт> — это «сайт» (origin), и всё, что приложение хранит
+// у себя (вход в Supabase, офлайн-очередь неотправленных правок, настройки,
+// загруженные отчёты, Service Worker), привязано именно к нему. Раньше порт
+// выбирался случайно (listen(0)) — и при каждом запуске приложение оказывалось
+// «новым сайтом»: приходилось заново входить, а данные localStorage терялись.
+// Теперь: сначала порт прошлого запуска, затем фиксированный список, и только
+// если всё занято — любой свободный (выбор запоминается на следующие запуски).
+const PREFERRED_PORTS = [47329, 47330, 47331, 47332, 47333];
+
+function listenOn(port) {
   return new Promise((resolve, reject) => {
-    server = http.createServer((req, res) => {
-      try {
-        const urlPath = decodeURIComponent(req.url.split('?')[0]);
-        let filePath = path.join(APP_DIR, urlPath === '/' ? 'index.html' : urlPath);
-        // Защита от выхода за пределы папки приложения (path traversal).
-        if (!filePath.startsWith(APP_DIR)) { res.writeHead(403); return res.end('Forbidden'); }
-        fs.readFile(filePath, (err, data) => {
-          if (err) { res.writeHead(404); return res.end('Not found'); }
-          const ext = path.extname(filePath).toLowerCase();
-          res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
-          res.end(data);
-        });
-      } catch (e) {
-        res.writeHead(500); res.end('Server error');
-      }
-    });
-    server.listen(0, '127.0.0.1', () => {
-      serverPort = server.address().port;
-      resolve(serverPort);
-    });
-    server.on('error', reject);
+    const onError = (err) => { server.removeListener('listening', onListening); reject(err); };
+    const onListening = () => { server.removeListener('error', onError); resolve(server.address().port); };
+    server.once('error', onError);
+    server.once('listening', onListening);
+    server.listen(port, '127.0.0.1');
   });
+}
+
+async function startServer() {
+  const root = APP_DIR + path.sep;
+  server = http.createServer((req, res) => {
+    try {
+      const urlPath = decodeURIComponent(req.url.split('?')[0]);
+      const filePath = path.normalize(path.join(APP_DIR, urlPath === '/' ? 'index.html' : urlPath));
+      // Защита от выхода за пределы папки приложения (path traversal).
+      // Сравниваем с «APP_DIR + разделитель», иначе прошла бы соседняя папка app-xxx.
+      if (!filePath.startsWith(root)) { res.writeHead(403); return res.end('Forbidden'); }
+      fs.readFile(filePath, (err, data) => {
+        if (err) { res.writeHead(404); return res.end('Not found'); }
+        const ext = path.extname(filePath).toLowerCase();
+        res.writeHead(200, {
+          'Content-Type': MIME[ext] || 'application/octet-stream',
+          // После обновления приложения файлы на диске новые — не даём движку
+          // подставить из своего HTTP-кеша старый index.html / sw.js.
+          'Cache-Control': 'no-cache',
+          'X-Content-Type-Options': 'nosniff',
+        });
+        res.end(data);
+      });
+    } catch (e) {
+      res.writeHead(500); res.end('Server error');
+    }
+  });
+
+  const candidates = [...new Set([desktopSettings.port, ...PREFERRED_PORTS].filter(p => Number.isInteger(p) && p > 0))];
+  for (const port of candidates) {
+    try {
+      serverPort = await listenOn(port);
+      break;
+    } catch (_) { /* порт занят другой программой — пробуем следующий */ }
+  }
+  if (!serverPort) serverPort = await listenOn(0);
+  if (desktopSettings.port !== serverPort) {
+    desktopSettings.port = serverPort;
+    saveDesktopSettings();
+  }
+  return serverPort;
 }
 
 function createWindow() {
@@ -132,10 +167,17 @@ function createWindow() {
 
   // Разрешаем запрос на показ уведомлений (Notification API) без диалога —
   // приложение и так спрашивает разрешение внутри своего интерфейса.
-  session.defaultSession.setPermissionRequestHandler((wc, permission, callback) => {
-    if (permission === 'notifications') return callback(true);
-    callback(false);
+  // Буфер обмена (кнопка «Написать в MAX» копирует номер → navigator.clipboard.writeText)
+  // тоже требует разрешения — без него копирование в десктоп-версии молча не работало.
+  // Разрешения выдаём только своей странице (127.0.0.1:<наш порт>).
+  const ALLOWED_PERMISSIONS = new Set(['notifications', 'clipboard-sanitized-write']);
+  const isOwnOrigin = (url) => { try { return new URL(url).origin === `http://127.0.0.1:${serverPort}`; } catch (_) { return false; } };
+  session.defaultSession.setPermissionRequestHandler((wc, permission, callback, details) => {
+    const url = (details && details.requestingUrl) || (wc && wc.getURL()) || '';
+    callback(ALLOWED_PERMISSIONS.has(permission) && isOwnOrigin(url));
   });
+  session.defaultSession.setPermissionCheckHandler((wc, permission, requestingOrigin) =>
+    ALLOWED_PERMISSIONS.has(permission) && isOwnOrigin(requestingOrigin || (wc && wc.getURL()) || ''));
 
   // Свернуть в трей вместо закрытия — чтобы локальные напоминания о задачах
   // (проверяются раз в 30 секунд внутри страницы) продолжали работать, пока

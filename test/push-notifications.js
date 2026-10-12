@@ -18,7 +18,7 @@ const path = require("path");
   assert(info.hasSubscribeFn, "subscribeToPush() определена");
   assert(info.hasEnableFn, "enableBrowserNotifications() определена");
 
-  const swPath = path.resolve(__dirname, "../sw.js");
+  const swPath = path.resolve(__dirname, "../app/sw.js");
   const swSrc = fs.readFileSync(swPath, "utf8");
   assert(/addEventListener\(['"]push['"]/.test(swSrc), "sw.js обрабатывает событие push");
   assert(/addEventListener\(['"]notificationclick['"]/.test(swSrc), "sw.js обрабатывает клик по уведомлению");

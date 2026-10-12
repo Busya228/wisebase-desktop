@@ -9,7 +9,7 @@ const path = require("path");
 
 const APP = process.env.CRM_APP && process.env.CRM_APP.startsWith("file://")
   ? process.env.CRM_APP.slice(7)
-  : path.resolve(__dirname, "../index.html");
+  : path.resolve(__dirname, "../app/index.html");
 const src = fs.readFileSync(APP, "utf8");
 
 // Достаёт тело функции/константы по имени через баланс фигурных скобок — так же,

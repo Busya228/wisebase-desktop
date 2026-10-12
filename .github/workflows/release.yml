@@ -7,6 +7,8 @@ name: Release desktop app
 # поднимать не нужно:
 #   • номер версии: ровно тот, что в package.json ("version"), если такой ещё
 #     не выпускали; иначе автоматически <major>.<minor>.<номер запуска>;
+#   • сначала прогоняются автотесты (test/run-all.js) — если хоть один упал,
+#     сборки нет и пользователи ничего не получат;
 #   • Windows и macOS собираются параллельно и заливаются в черновик релиза;
 #   • когда ВСЕ файлы залиты, черновик публикуется автоматически — только
 #     после этого установленные приложения видят обновление (никто не получит
@@ -19,8 +21,11 @@ on:
     paths:
       - 'app/**'
       - 'main.js'
+      - 'preload.js'
       - 'package.json'
+      - 'package-lock.json'
       - 'build/**'
+      - 'scripts/**'
   workflow_dispatch: {}
 
 permissions:
@@ -52,8 +57,30 @@ jobs:
           echo "Версия релиза: $V"
           echo "version=$V" >> "$GITHUB_OUTPUT"
 
+  # Автотесты — тот же набор, что и `node test/run-all.js` локально.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Установить Playwright
+        working-directory: test
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Прогнать тесты
+        run: node test/run-all.js
+      - name: Логи тестов (при ошибке)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs
+          path: test/last-run-*.log
+
   build:
-    needs: version
+    needs: [version, test]
     strategy:
       matrix:
         include:
@@ -66,7 +93,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - run: npm ci
       - run: npm version ${{ needs.version.outputs.version }} --no-git-tag-version --allow-same-version
       - run: npm run ${{ matrix.script }}

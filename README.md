@@ -12,6 +12,8 @@
 
 ## Быстрый старт (разработка)
 
+Нужен Node.js 22 или новее (Electron 44).
+
 ```bash
 npm install
 npm start
@@ -20,13 +22,54 @@ npm start
 ## Как выпустить обновление (всё автоматически)
 
 1. Положите новую версию CRM в папку `app/` (`index.html`, `sw.js`).
-2. Дважды кликните `publish-update.bat` (или вручную: `git add -A`, `git commit -m "..."`, `git push`).
+   **Каждый раз, когда меняется `index.html`, поднимайте номер кеша** в
+   `app/sw.js`: `CACHE_NAME = 'wisebase-shell-verNN'` → `NN+1`
+   (`publish-update.bat` напомнит, если забыли).
+2. Опишите изменения в `RELEASE_NOTES.md` — этот текст пользователи увидят
+   в окне «Доступна новая версия приложения. Обновить?».
+3. Дважды кликните `publish-update.bat`.
 
-Всё. Версию и теги поднимать не нужно — GitHub Actions
-(`.github/workflows/release.yml`) сам присвоит номер (`29.0.N`), соберёт
-Windows и macOS, дождётся загрузки всех файлов и опубликует релиз.
-Смена «большой» версии — поменяйте `"version"` в `package.json` (например на
-`30.0.0`), дальше пойдёт `30.0.N`.
+Дальше GitHub Actions (`.github/workflows/release.yml`) сам:
+прогонит автотесты (если упали — выпуска не будет) → присвоит номер →
+соберёт Windows и macOS → опубликует релиз.
+
+Номер версии: ровно тот, что в `package.json` (`"version"`), если такой ещё не
+выпускали; иначе автоматически `<major>.<minor>.<номер запуска>`.
+Новая «большая» версия — поменяйте `"version"`, например на `30.0.0`.
+
+Сборку запускают изменения в `app/`, `main.js`, `preload.js`, `package.json`,
+`package-lock.json`, `build/`, `scripts/`. Правка только README/тестов релиз
+не создаёт. Запустить вручную: Actions → Release desktop app → Run workflow.
+
+## Автотесты
+
+```bash
+cd test && npm install && npx playwright install chromium && cd ..
+node test/run-all.js            # все наборы
+node test/run-all.js reports    # один набор
+```
+
+Проверяют интерфейс CRM (`app/index.html`) с заглушкой Supabase — в боевую
+базу тесты не ходят. Отдельно — `desktop-main` (локальный сервер обёртки) и
+`release-consistency` (версия ↔ RELEASE_NOTES, отсутствие секретов в файлах).
+
+SQL-политики проверяются на встроенном Postgres:
+`cd supabase/tests && npm install && node policies.test.mjs`.
+
+## База данных (Supabase)
+
+Скрипты в `supabase/` запускаются вручную в Supabase → SQL Editor:
+
+| Файл | Что делает |
+| --- | --- |
+| `realtime_setup.sql` | Включает обновления в реальном времени (один раз) |
+| `01_security_audit.sql` | Только чтение: RLS, политики, роли, типы колонок |
+| `02_security_hardening.sql` | Права по ролям на запись (повторяет правила интерфейса) |
+| `03_security_rollback.sql` | Полный откат `02_…` и `05_…` |
+| `04_reports.sql` | Таблица общих отчётов `reports` (обязательно для 29.1.0+) |
+| `05_roles.sql` | Смена ролей сотрудников администратором в CRM (после `02_…`, для 29.1.5+) |
+
+Push-напоминания — `push-server/` (Edge Function `crm-push`, см. `README-push.md`).
 
 ### Как обновляются уже установленные приложения
 
@@ -62,32 +105,27 @@ Windows-инсталлятор подписывать не обязательн�
 но каждый раз до подписи SmartScreen будет предупреждать «Неизвестный
 издатель» на новых установках.
 
-## Первая публикация в этот репозиторий
+## Важно: постоянный адрес локального сервера
 
-Если репозиторий `Busya228/wisebase-desktop` ещё пустой, из этой папки:
-
-```bash
-git init
-git add -A
-git commit -m "Initial desktop app"
-git branch -M main
-git remote add origin https://github.com/Busya228/wisebase-desktop.git
-git push -u origin main
-git tag v29.0.0
-git push origin --tags
-```
-
-После пуша тега `v29.0.0` в **Actions** запустится первая сборка — это будет
-первый релиз, который смогут скачать пользователи (см. `README-install.md`).
+Обёртка раздаёт CRM с `http://127.0.0.1:<порт>`. Для Chromium это «сайт», и к
+нему привязаны вход в Supabase, офлайн-очередь, настройки и загруженные отчёты.
+Поэтому порт постоянный (47329, при занятости — 47330…47333, выбор сохраняется
+в `desktop-settings.json` в папке данных приложения). Не меняйте этот список без
+необходимости: новый порт = пользователям придётся войти заново.
 
 ## Структура проекта
 
 - `main.js` — Electron main-процесс: локальный сервер, окно, трей, меню,
-  автообновление (`electron-updater`)
-- `app/` — файлы веб-приложения (`index.html`, `sw.js`). При обновлении CRM
-  просто замените их на новую версию из основного веб-проекта, поднимите
-  версию и запушьте тег — дальше по инструкции выше
+  раздел «Приложение» (IPC), автообновление (`electron-updater`)
+- `preload.js` — мост для страницы: `window.wisebaseDesktop` (только белый
+  список действий; `contextIsolation` + `sandbox` включены)
+- `app/` — файлы веб-приложения (`index.html`, `sw.js`) — те же, что на хостинге
 - `build/` — иконки (`icon.ico`, `icon.icns`, `icon.png`)
 - `scripts/afterPack.js` — хук electron-builder: встраивает иконку/версию в
   Windows-exe через чистый JS (`resedit`), без Wine
-- `.github/workflows/release.yml` — CI-пайплайн сборки и публикации релизов
+- `test/` — автотесты (Playwright), `node test/run-all.js`
+- `supabase/` — SQL-скрипты базы и их проверка
+- `push-server/` — Edge Function push-напоминаний
+- `.github/workflows/release.yml` — тесты, сборка и публикация релизов
+- `RELEASE_NOTES.md` — «Что нового» для окна обновления
+- `publish-update.bat` — выпуск обновления в один клик

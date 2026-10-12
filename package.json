@@ -1,7 +1,7 @@
 {
   "name": "wisebase-crm-desktop",
   "productName": "WiseBase CRM",
-  "version": "29.1.0",
+  "version": "29.1.5",
   "description": "WiseBase CRM — десктоп-версия (обёртка над веб-приложением)",
   "main": "main.js",
   "author": "WiseBase",
@@ -19,8 +19,8 @@
     "electron-updater": "^6.8.9"
   },
   "devDependencies": {
-    "electron": "^31.0.0",
-    "electron-builder": "^24.13.3",
+    "electron": "^44.7.0",
+    "electron-builder": "^26.15.3",
     "png2icons": "^2.0.1",
     "resedit": "^1.7.2"
   },
