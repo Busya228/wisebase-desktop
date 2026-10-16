@@ -153,7 +153,7 @@ const row = (name, o) => Object.assign({ "РМ ФИО": name, "Направле�
   const up = await page.evaluate(() => {
     const c = window.__calls.find(c => c.table === "reports" && c.ops.some(o => o[0] === "upsert"));
     const op = c && c.ops.find(o => o[0] === "upsert");
-    return { rec: op && op[1], opt: op && op[2], local: window.__rep.getData()["2026-10"], cache: JSON.parse(localStorage.getItem("wb_rep_cache") || "{}")["2026-10"] };
+    return { rec: op && op[1], opt: op && op[2], local: window.__rep.getData()["2026-10"], cache: JSON.parse(localStorage.getItem(wbDataKey("wb_rep_cache")) || "{}")["2026-10"] };
   });
   assert(up.rec && up.rec.year === 2026 && up.rec.month === 10 && up.opt && up.opt.onConflict === "year,month", "отчёт уходит в таблицу reports за 2026-10 (upsert по месяцу): " + JSON.stringify(up.rec && { y: up.rec.year, m: up.rec.month, o: up.opt }));
   assert(up.rec && up.rec.rows.length === 1 && up.rec.rows[0]["РМ ФИО"] === "Сидоров" && !("Лишняя колонка" in up.rec.rows[0]), "в базу уходит 1 строка без лишних колонок");
@@ -185,6 +185,7 @@ const row = (name, o) => Object.assign({ "РМ ФИО": name, "Направле�
   const mig = await page.evaluate(async () => {
     window.__calls = [];
     window.__selectData = [{ year: 2026, month: 7, rows: [{ "РМ ФИО": "Серверный" }], file_name: "s.xlsx", loaded_at: "2026-08-01T07:00:00Z", uploaded_by_name: "Глава" }];
+    localStorage.setItem("wb_legacy_data_owner",currentUser.id);
     localStorage.setItem("wb_rep_data", JSON.stringify({
       "2026-7": { rows: [{ "РМ ФИО": "Старый локальный" }], loaded: "x" },   // есть на сервере — не трогаем
       "2026-5": { rows: [{ "РМ ФИО": "Майский", "Мусор": 1 }], loaded: "x" }, // нет на сервере — переносим
@@ -211,6 +212,7 @@ const row = (name, o) => Object.assign({ "РМ ФИО": name, "Направле�
   assert(mgrMig.ups === 0 && mgrMig.legacy, "у учётки без роли локальные отчёты в базу не отправляются и не удаляются");
   const mMig = await page.evaluate(async () => {
     currentUser = { id: "m1", email: "m1@x" }; currentProfile = { id: "m1", role: "manager", full_name: "Менеджер" };
+    localStorage.setItem("wb_legacy_data_owner",currentUser.id);
     window.__calls = [];
     await repLoadRemote();
     return { ups: window.__calls.filter(c => c.ops.some(o => o[0] === "upsert")).length, legacy: localStorage.getItem("wb_rep_data") };

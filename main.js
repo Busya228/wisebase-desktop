@@ -72,6 +72,8 @@ async function startServer() {
   const root = APP_DIR + path.sep;
   server = http.createServer((req, res) => {
     try {
+      if(req.headers.host !== `127.0.0.1:${serverPort}`){res.writeHead(403);return res.end('Forbidden');}
+      if(!['GET','HEAD'].includes(req.method)){res.writeHead(405);return res.end('Method not allowed');}
       const urlPath = decodeURIComponent(req.url.split('?')[0]);
       const filePath = path.normalize(path.join(APP_DIR, urlPath === '/' ? 'index.html' : urlPath));
       // Защита от выхода за пределы папки приложения (path traversal).
@@ -86,8 +88,11 @@ async function startServer() {
           // подставить из своего HTTP-кеша старый index.html / sw.js.
           'Cache-Control': 'no-cache',
           'X-Content-Type-Options': 'nosniff',
+          'Content-Security-Policy': "frame-ancestors 'none'",
+          'Referrer-Policy': 'no-referrer',
+          'Cross-Origin-Resource-Policy': 'same-origin',
         });
-        res.end(data);
+        res.end(req.method==='HEAD'?undefined:data);
       });
     } catch (e) {
       res.writeHead(500); res.end('Server error');
@@ -107,6 +112,13 @@ async function startServer() {
     saveDesktopSettings();
   }
   return serverPort;
+}
+
+function isTrustedAppUrl(value){
+  try{const u=new URL(value);return u.origin===`http://127.0.0.1:${serverPort}` && ['/', '/index.html'].includes(u.pathname);}catch(_){return false;}
+}
+function isTrustedDesktopSender(event){
+  return !!mainWindow && event.sender===mainWindow.webContents && event.senderFrame===mainWindow.webContents.mainFrame && isTrustedAppUrl(event.senderFrame.url);
 }
 
 function createWindow() {
@@ -156,6 +168,9 @@ function createWindow() {
   mainWindow.once('ready-to-show', () => mainWindow.show());
   // Обновление скачалось, пока окно было в трее — спрашиваем при открытии.
   mainWindow.on('show', () => setTimeout(() => promptUpdate(false), 800));
+  mainWindow.webContents.on('will-navigate',(event,url)=>{if(!isTrustedAppUrl(url))event.preventDefault();});
+  mainWindow.webContents.on('will-redirect',(event,url)=>{if(!isTrustedAppUrl(url))event.preventDefault();});
+  mainWindow.webContents.on('will-attach-webview',event=>event.preventDefault());
   mainWindow.loadURL(`http://127.0.0.1:${serverPort}/index.html`);
 
   // Ссылки на внешние карты/Telegram/почту (target=_blank в приложении) должны
@@ -266,14 +281,14 @@ function sendDesktopState() {
 }
 
 ipcMain.handle('wb:action', (event, name) => {
-  if (!mainWindow || event.sender !== mainWindow.webContents) return null;
+  if (!isTrustedDesktopSender(event)) return null;
   const fn = DESKTOP_ACTIONS[name];
   if (!fn) return null;
   fn(mainWindow);
   return desktopInfo(mainWindow);
 });
 ipcMain.handle('wb:info', (event) => {
-  if (!mainWindow || event.sender !== mainWindow.webContents) return null;
+  if (!isTrustedDesktopSender(event)) return null;
   return desktopInfo(mainWindow);
 });
 

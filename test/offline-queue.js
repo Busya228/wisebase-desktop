@@ -18,7 +18,7 @@ const { openApp, launch, assert } = require("./_helpers.js");
   const afterWrite = await page.evaluate(async () => {
     const before = offlineQueue.length;
     const r = await dbWrite({ table: "tasks", op: "update", values: { done: true }, match: { eq: [["id", 1]] } });
-    return { before, after: offlineQueue.length, queued: r.queued, persisted: JSON.parse(localStorage.getItem("crm_offline_queue_v1") || "[]").length };
+    return { before, after: offlineQueue.length, queued: r.queued, persisted: JSON.parse(localStorage.getItem(wbDataKey(OQK)) || "[]").length };
   });
   assert(afterWrite.after === afterWrite.before + 1, "офлайн: запись добавляется в очередь (" + afterWrite.before + " -> " + afterWrite.after + ")");
   assert(afterWrite.queued === true, "офлайн: dbWrite() возвращает queued:true, не ошибку");
@@ -51,7 +51,7 @@ const { openApp, launch, assert } = require("./_helpers.js");
   await context.setOffline(false);
   const afterFlush = await page.evaluate(async () => {
     await flushQueue();
-    return { len: offlineQueue.length, persisted: JSON.parse(localStorage.getItem("crm_offline_queue_v1") || "[]").length };
+    return { len: offlineQueue.length, persisted: JSON.parse(localStorage.getItem(wbDataKey(OQK)) || "[]").length };
   });
   assert(afterFlush.len === 0, "после flushQueue() онлайн очередь опустела (осталось " + afterFlush.len + ")");
   assert(afterFlush.persisted === 0, "localStorage тоже очищен, не только память");

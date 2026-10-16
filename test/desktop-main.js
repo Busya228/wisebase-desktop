@@ -53,6 +53,8 @@ const get = (port, u) => new Promise(r => http.get({ host: "127.0.0.1", port, pa
     const r = await get(port, u);
     assert(r.body !== "SECRET", "файл за пределами app/ недоступен: " + u + " → " + r.status);
   }
+  const foreignHost = await new Promise(r => http.get({host:'127.0.0.1',port,path:'/',headers:{Host:'invalid.test'}}, res=>{res.resume();res.on('end',()=>r(res.statusCode));}).on('error',()=>r(0)));
+  assert(foreignHost===403,'локальный сервер отклоняет неверный Host');
   if (blocker) blocker.close();
   fs.rmSync(tmp, { recursive: true, force: true });
   process.exit(0);

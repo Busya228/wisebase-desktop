@@ -24,11 +24,11 @@ const { openApp, launch, assert } = require("./_helpers.js");
     const afterEdit = S.clients[0].name;
     await undo();
     const afterUndo = { name: S.clients[0]?.name, count: S.clients.length };
-    const idbAfterUndo = JSON.parse(await idbGet(SK)).clients[0]?.name;
+    const idbAfterUndo = JSON.parse(await idbGet(wbDataKey(SK))).clients[0]?.name;
 
     await redo();
     const afterRedo = { name: S.clients[0]?.name, count: S.clients.length };
-    const idbAfterRedo = JSON.parse(await idbGet(SK)).clients[0]?.name;
+    const idbAfterRedo = JSON.parse(await idbGet(wbDataKey(SK))).clients[0]?.name;
 
     // Повторный undo без изменений после него — стек не должен уйти в минус/сломаться.
     await undo();

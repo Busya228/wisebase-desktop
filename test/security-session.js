@@ -1,0 +1,41 @@
+const {openApp,launch,assert}=require('./_helpers.js');
+(async()=>{
+ const {browser,page,errors}=await launch({stub:true});await openApp(page);
+ const r=await page.evaluate(async()=>{
+  const out={};currentUser={id:'A'};currentProfile={id:'A',role:'manager'};
+  S.clients=[{id:1,name:'A_ONLY',owner_id:'A',status:'active',tags:[],history:[]}];await persistLocalCache();
+  currentUser={id:'B'};currentProfile={id:'B',role:'manager'};await loadLocalCache();out.crossCache=S.clients.length===0;
+  currentUser={id:'A'};await loadLocalCache();out.ownCache=S.clients[0]?.name==='A_ONLY';
+  loadOfflineQueue();enqueueOp({table:'tasks',op:'update',values:{text:'A_CHANGE'},match:{eq:[['id',1]]}});
+  let calls=0;const oldExec=execDescriptor,oldSync=syncFromSupabase;execDescriptor=async()=>{calls++;return {error:null}};syncFromSupabase=async()=>{};
+  currentUser={id:'B'};await flushQueue();out.crossQueue=calls===0;
+  loadOfflineQueue();out.bQueue=offlineQueue.length===0;
+  currentUser={id:'A'};loadOfflineQueue();out.aQueue=offlineQueue.length===1;
+  execDescriptor=async()=>({error:{message:'permission denied',code:'42501'}});await flushQueue();
+  out.failedRetained=offlineQueue.length===1 && offlineQueue[0].status==='failed';
+  await flushQueue();out.noAutoRetry=offlineQueue[0]?.status==='failed';
+  tmpIdMap[-1]=101;persistOfflineQueue();tmpIdMap={};loadOfflineQueue();out.idMap=tmpIdMap[-1]===101 && tmpIdSeq<-1;
+  out.moneyNotId=resolveTmpRefs({client_id:-1,amount:-1}).client_id===101 && resolveTmpRefs({client_id:-1,amount:-1}).amount===-1;
+  execDescriptor=oldExec;syncFromSupabase=oldSync;
+  wbResetSessionState();out.profileCleared=currentProfile===null;currentUser=null;currentProfile=null;
+  out.reset=S.clients.length===0 && allProfiles.length===0 && undoStack.length===0 && offlineQueue.length===0;
+  currentUser={id:'A'};currentProfile={id:'A',role:'manager'};loadOfflineQueue();out.pendingPreserved=offlineQueue.length===1;
+  const marker='<b data-audit="untrusted">TEXT</b>';
+  const c={id:999,name:'Synthetic',company:'Synthetic',status:'active',history:[],tags:[],channels:[marker],formats:[marker],websites:[{url:'javascript:void(0)',label:'unsafe'}],geoLinks:[]};
+  const div=document.createElement('div');div.innerHTML=renderClientDetailHTML(c);
+  out.safeText=!div.querySelector('[data-audit]') && div.textContent.includes(marker);
+  out.safeUrl=!Array.from(div.querySelectorAll('a')).some(a=>(a.getAttribute('href')||'').startsWith('javascript:'));
+  out.safeSchemes=normGeoUrl('javascript:void(0)')==='' && normGeoUrl('data:text/html,hi')==='' && normGeoUrl('example.com')==='https://example.com';
+  return out;
+ });
+ for(const [k,v] of Object.entries(r))assert(v,'защита '+k+': '+v);
+ await page.evaluate(()=>{
+  const key='sb-'+new URL(SUPABASE_URL).hostname.split('.')[0]+'-auth-token';
+  localStorage.setItem(key,JSON.stringify({user:currentUser}));sessionStorage.setItem(key,JSON.stringify({user:currentUser}));
+  logoutUser();
+ });
+ await page.waitForTimeout(1600);
+ const exited=await page.evaluate(()=>currentUser===null && !Object.keys(localStorage).some(k=>/^sb-.*-auth-token$/.test(k)) && !Object.keys(sessionStorage).some(k=>/^sb-.*-auth-token$/.test(k)));
+ assert(exited,'выход завершён и локальные токены удалены даже без события auth');
+ assert(errors.length===0,'нет JS-ошибок: '+JSON.stringify(errors));await browser.close();process.exit(0);
+})().catch(e=>{console.log('FAIL '+e.stack);process.exit(1)});

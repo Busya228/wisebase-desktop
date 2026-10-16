@@ -50,6 +50,8 @@ async function launch(opts = {}) {
   const browser = await chromium.launch({ executablePath: CHROME_PATH, args: ["--no-sandbox"] });
   const errors = [];
   const context = await browser.newContext();
+  // Tests never contact production or execute code from external CDNs.
+  await context.route("**/*", r => r.request().url().startsWith("file:") ? r.continue() : r.abort());
   if (opts.init) await context.addInitScript({ content: opts.init });
   if (opts.stub) {
     await context.addInitScript({ content: STUB_SRC });

@@ -1826,7 +1826,7 @@ button,a,select,label{touch-action:manipulation}
     </svg>
     <span class="wb-word">Wise<em>Base</em></span>
   </div>
-  <div class="mob-page-title" id="mob-page-title"><span id="mob-page-title-text">Главная</span><span class="offline-chip" id="offline-chip" role="status" aria-live="polite" style="display:none" onclick="flushQueue()"></span></div>
+  <div class="mob-page-title" id="mob-page-title"><span id="mob-page-title-text">Главная</span><span class="offline-chip" id="offline-chip" role="status" aria-live="polite" style="display:none" onclick="retryOfflineQueue()"></span></div>
   <div class="today-lbl" id="today-lbl"></div>
   <div class="hdr-right">
     <div style="display:flex;gap:2px">
@@ -1848,7 +1848,7 @@ button,a,select,label{touch-action:manipulation}
       </div>
     </div>
     <span class="rt-dot" id="rt-dot" role="status" style="display:none"></span>
-    <span class="offline-badge" id="offline-badge" role="status" aria-live="polite" style="display:none" onclick="flushQueue()" title="Нажмите, чтобы попробовать отправить сейчас"></span>
+    <span class="offline-badge" id="offline-badge" role="status" aria-live="polite" style="display:none" onclick="retryOfflineQueue()" title="Нажмите, чтобы попробовать отправить сейчас"></span>
     <button class="theme-btn" id="nav-layout-btn" onclick="toggleNavLayout()" aria-pressed="false" title="Навигация: сбоку. Нажмите — сверху" aria-label="Переключить вид навигации"><span id="nav-layout-ic">◧</span></button>
     <span class="hk-tip" onclick="document.getElementById('m-shortcuts').classList.add('open')" onkeydown="if(event.key===' '||event.key==='Enter'){event.preventDefault();document.getElementById('m-shortcuts').classList.add('open');}" role="button" tabindex="0" aria-label="Показать горячие клавиши" data-tip="N — новая задача&#10;C — новый клиент&#10;← ↑ → ↓ — перемещение, Enter — открыть&#10;Ctrl+Z — отменить&#10;Ctrl+Y — повторить&#10;Esc — закрыть окно&#10;&#10;Нажмите, чтобы увидеть полный список">⌨ N/C/←→</span>
     <div style="position:relative">
@@ -3045,6 +3045,10 @@ function idbGet(key){
     req.onerror=()=>reject(req.error);
   }));
 }
+function idbDelete(key){
+  if(!key)return Promise.resolve();
+  return openIdb().then(db=>new Promise((resolve,reject)=>{const tx=db.transaction(IDB_STORE,'readwrite');tx.objectStore(IDB_STORE).delete(key);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);}));
+}
 function idbSet(key,value){
   return openIdb().then(db=>new Promise((resolve,reject)=>{
     const tx=db.transaction(IDB_STORE,'readwrite');
@@ -3257,7 +3261,7 @@ const TODAY=today();
 // новой присланной версии). Показывается в Профиле, чтобы можно было сверить «то, что
 // открыто на телефоне» с «тем, что прислали только что» — без гадания, обновился
 // ли сайт после деплоя на хостинг.
-const APP_BUILD='12.10.2026 · ver 29.2.0';
+const APP_BUILD='ver 29.2.1 · исправления безопасности и импорта';
 // Преобразует Date обратно в строку 'YYYY-MM-DD' по ЛОКАЛЬНЫМ компонентам (не UTC) — пара к today().
 function dateToLocalStr(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 // Парсит строку 'YYYY-MM-DD' как ЛОКАЛЬНУЮ дату (полночь по местному времени), а не UTC.
@@ -3620,7 +3624,7 @@ const RC=n=>{
   return R(v);
 };
 const RM=n=>(typeof matchMedia!=='undefined'&&matchMedia('(max-width:600px)').matches)?RC(n):R(n);
-const FD=s=>{if(!s)return'';const[y,m,d]=s.split('-');return`${d}.${m}.${y}`;};
+const FD=s=>{if(!s)return'';const m=String(s).match(/^(\d{4})-(\d{2})-(\d{2})$/);return m?`${m[3]}.${m[2]}.${m[1]}`:esc(s);};
 // Русское склонение числительных: pluralRu(2,'клиент','клиента','клиентов') -> 'клиента'
 function pluralRu(n,one,few,many){
   const mod10=n%10, mod100=n%100;
@@ -3849,6 +3853,7 @@ document.addEventListener('click',e=>{
 
 let _saveFailWarned=false;
 function save(){
+  if(!currentUser)return;
   try{
     const json=JSON.stringify(S);
     // Перед перезаписью — если состояние реально изменилось, кладём ПРЕДЫДУЩИЙ снимок
@@ -3864,7 +3869,7 @@ function save(){
     // Запись в IndexedDB асинхронная (в отличие от прежней localStorage) — не ждём
     // её здесь: save() вызывается синхронно в 40+ местах кода, и это не должно
     // меняться. Ошибку показываем тем же предупреждением, что было раньше.
-    idbSet(SK,json).catch(e=>{
+    idbSet(wbDataKey(SK),json).catch(e=>{
       console.error('Не удалось сохранить данные CRM:',e);
       if(!_saveFailWarned){
         _saveFailWarned=true;
@@ -3890,19 +3895,24 @@ function save(){
 // приложение открывалось полностью пустым, хотя всё уже лежало в localStorage.
 async function loadLocalCache(){
   try{
-    let s=await idbGet(SK);
-    if(!s){
+    S=wbEmptyState();
+    const ctx=wbSessionContext();if(!ctx.userId)return false;
+    let s=await idbGet(wbDataKey(SK));
+    if(!wbSameSession(ctx))return false;
+    if(!s && wbLegacyDataIsMine()){
       // Разовая миграция: у тех, кто уже пользовался приложением до перехода на
       // IndexedDB, кеш лежит в localStorage под тем же ключом — переносим один раз,
       // дальше читаем и пишем только в IndexedDB.
-      const legacy=localStorage.getItem(SK);
+      const legacy=(await idbGet(SK))||localStorage.getItem(SK);
+      if(!wbSameSession(ctx))return false;
       if(legacy){
         s=legacy;
-        try{ await idbSet(SK,legacy); }catch(_){}
-        try{ localStorage.removeItem(SK); }catch(_){}
+        try{ await idbSet(wbDataKey(SK),legacy); }catch(_){}
+        if(!wbSameSession(ctx))return false;
+        try{ localStorage.removeItem(SK);await idbDelete(SK); }catch(_){}
       }
     }
-    if(!s)return false;
+    if(!wbSameSession(ctx)||!s)return false;
     const parsed=JSON.parse(s);
     if(!parsed||!Array.isArray(parsed.clients))return false;
     S=parsed;
@@ -3923,7 +3933,8 @@ async function loadLocalCache(){
 // приложению было что показать. save() вызывается только при действиях
 // пользователя, поэтому после чистой синхронизации данные иначе не попадали бы в кеш.
 async function persistLocalCache(){
-  try{ await idbSet(SK, JSON.stringify(S)); }catch(e){}
+  if(!currentUser)return;
+  try{ await idbSet(wbDataKey(SK), JSON.stringify(S)); }catch(e){}
 }
 function load(){
   try{const s=localStorage.getItem(SK);if(s){
@@ -5098,7 +5109,7 @@ function clearTSel(){selT.clear();renderTaskPage();}
 function delSelTasks(){if(!selT.size)return;const n=selT.size;confirm2('Удалить задачи',`Удалить ${n} задач(и)?`,()=>{S.tasks=S.tasks.filter(t=>!selT.has(t.id));selT.clear();save();toast(`Удалено: ${n}`);renderTaskPage();});}
 // Экспорт выбранных задач в Excel
 function exportSelectedTasks(){
-  const selected = S.tasks.filter(t=>selT.has(t.id));
+  const selected = S.tasks.filter(t=>selT.has(t.id) && wbCanExportRelated(t));
   if(!selected.length){toast('Выберите задачи для экспорта');return;}
   const wb=XLSX.utils.book_new();
   const data=[['ID','Тип','Приоритет','Описание','Клиент','Дата','Время','Выполнено','Повтор','Заметка']];
@@ -5232,11 +5243,16 @@ function updGeoWarn(){
 }
 // Показать/скрыть блок геосервисов по текущему выбору каналов в форме
 // Нормализуем: человек может вставить ссылку без протокола
+function wbSafeHttpUrl(v){
+  try{const u=new URL(String(v||''));return ['http:','https:'].includes(u.protocol) && !u.username && !u.password ? String(v).trim() : '';}catch(_){return '';}
+}
 function normGeoUrl(v){
-  v=(v||'').trim();
-  if(!v)return '';
-  if(!/^https?:\/\//i.test(v))v='https://'+v.replace(/^\/+/,'');
-  return v;
+  v=String(v||'').trim();if(!v)return '';
+  if(!/^https?:\/\//i.test(v)){
+    if(/^[a-z][a-z0-9+.-]*:/i.test(v))return '';
+    v='https://'+v.replace(/^\/+/,'');
+  }
+  return wbSafeHttpUrl(v);
 }
 let geoGroupCounter=0;
 // Одна «точка» — город + пара ссылок. Клиент может вести несколько точек (сеть по
@@ -5341,8 +5357,8 @@ function mkGeoLinks(c){
   const multi=groups.length>1;
   return `<span class="geo-links">${groups.map(g=>{
     const L=[];
-    if(g.map2gis)  L.push(`<a class="geo-link" href="${esc(g.map2gis)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Открыть в 2ГИС${g.city?' — '+esc(g.city):''}">📍 2ГИС</a>`);
-    if(g.mapYandex)L.push(`<a class="geo-link" href="${esc(g.mapYandex)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Открыть в Яндекс Картах${g.city?' — '+esc(g.city):''}">📍 Яндекс</a>`);
+    if(g.map2gis)  L.push(`<a class="geo-link" href="${esc(wbSafeHttpUrl(g.map2gis))}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Открыть в 2ГИС${g.city?' — '+esc(g.city):''}">📍 2ГИС</a>`);
+    if(g.mapYandex)L.push(`<a class="geo-link" href="${esc(wbSafeHttpUrl(g.mapYandex))}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Открыть в Яндекс Картах${g.city?' — '+esc(g.city):''}">📍 Яндекс</a>`);
     if(!L.length)return '';
     const cityLabel=multi&&g.city?`<span class="geo-city-lbl">${esc(g.city)}:</span>`:'';
     return cityLabel+L.join('');
@@ -5603,7 +5619,7 @@ function renderClients(){
       html+=`<div class="client-card${sel?' sel':''}${chk?' chk':''}${c.pinned?' pinned-card':''}" data-client-id="${c.id}" onclick="selectClient(${c.id})">
         <div class="cl-row">
           <div onclick="event.stopPropagation()"><input type="checkbox" ${chk?'checked':''} onchange="togSelC(${c.id},this.checked)" style="accent-color:var(--accent)"></div>
-          <div style="display:flex;align-items:center;gap:2px"><div class="avatar ${c.color}" style="width:28px;height:28px;font-size:10px;border-radius:8px">${c.avatar}</div></div>
+          <div style="display:flex;align-items:center;gap:2px"><div class="avatar ${COLS.includes(c.color)?c.color:COLS[0]}" style="width:28px;height:28px;font-size:10px;border-radius:8px">${c.avatar}</div></div>
           <div style="min-width:0">
             <div style="display:flex;align-items:center;gap:4px">
               ${c.pinned?'<span style="font-size:12px">📌</span>':''}
@@ -5612,7 +5628,7 @@ function renderClients(){
           </div>
           <div>${mkStatusBadge(c)}</div>
           <div style="font-size:12px;font-weight:500">${c.potential?RM(c.potential):'—'}</div>
-          <div style="font-size:12px;color:var(--t2)">${getChannels(c).length?getChannels(c).map(ch=>`<span style="display:inline-block;padding:1px 7px;border-radius:20px;font-size:11px;font-weight:500;background:var(--blue-bg);color:var(--blue);margin:1px 2px 1px 0">${ch}</span>`).join(''):'<span style="color:var(--t3)">—</span>'}</div>
+          <div style="font-size:12px;color:var(--t2)">${getChannels(c).length?getChannels(c).map(ch=>`<span style="display:inline-block;padding:1px 7px;border-radius:20px;font-size:11px;font-weight:500;background:var(--blue-bg);color:var(--blue);margin:1px 2px 1px 0">${esc(ch)}</span>`).join(''):'<span style="color:var(--t3)">—</span>'}</div>
           <div style="font-size:12px;color:var(--t2)">${getFormats(c).length?getFormats(c).join(', '):'<span style="color:var(--t3)">—</span>'}</div>
           <div>${tasks?`<span class="badge badge-task">${tasks}</span>`:'<span style="color:var(--t3)">—</span>'}</div>
           <div>${offersCount?`<span class="badge badge-deal">${offersCount}</span>`:'<span style="color:var(--t3)">—</span>'}</div>
@@ -5633,7 +5649,7 @@ function renderClients(){
       html+=`<div class="client-card${sel?' sel':''}${chk?' chk':''}${c.pinned?' pinned-card':''}" data-client-id="${c.id}" onclick="selectClient(${c.id})">
         <div class="cc-top">
           <div class="cb-wrap" onclick="event.stopPropagation()"><input type="checkbox" ${chk?'checked':''} onchange="togSelC(${c.id},this.checked)"></div>
-          <div class="avatar ${c.color}">${c.avatar}</div>
+          <div class="avatar ${COLS.includes(c.color)?c.color:COLS[0]}">${c.avatar}</div>
           <div style="flex:1;min-width:0"><div class="cc-name">${esc(c.company||c.name)}</div></div>
           <div onclick="event.stopPropagation()">${pinBtn}</div>
         </div>
@@ -5707,14 +5723,14 @@ function renderClientDetailHTML(c){
   let activity = [];
   if(c.history) c.history.forEach(h=>activity.push({date:h.date, text:h.text||'', icon:'📝', type:'history'}));
   tasks.forEach(t=>{ if(!t.done) activity.push({date:t.date, text:t.text, icon:t.type==='call'?'📞':t.type==='meet'?'📅':'✅', type:'task'}); });
-  offers.forEach(o=>{ activity.push({date:o.date||TODAY, text:`${o.text} — ${OFFER_STATUS_M[o.status]?.l||o.status} (${R(o.amount)})`, icon:'💼', type:'offer'}); });
+  offers.forEach(o=>{ activity.push({date:o.date||TODAY, text:`${o.text} — ${esc(OFFER_STATUS_M[o.status]?.l||o.status)} (${R(o.amount)})`, icon:'💼', type:'offer'}); });
   activity.sort((a,b)=>b.date.localeCompare(a.date) || (a.text.localeCompare(b.text)));
 
   let activityHtml = activity.length ? `<div class="activity-timeline">${activity.map(a=>`<div class="activity-item"><span class="activity-icon">${a.icon}</span><div class="activity-content"><div>${esc(a.text)}</div><div class="activity-date">${FD(a.date)}</div></div></div>`).join('')}</div>` : '<div style="color:var(--t2);font-size:12px">Нет активности</div>';
 
   return `<div class="detail-panel">
     <div class="dh">
-      <div class="avatar ${c.color}" style="width:44px;height:44px;font-size:14px">${esc(c.avatar)}</div>
+      <div class="avatar ${COLS.includes(c.color)?c.color:COLS[0]}" style="width:44px;height:44px;font-size:14px">${esc(c.avatar)}</div>
       <div><div class="dn">${esc(c.company||c.name)}</div>
         <div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap">
           <span class="status-badge ${sm.cls}">${sm.l}</span>
@@ -5738,13 +5754,13 @@ function renderClientDetailHTML(c){
       ${c.nextContact?`<div class="info-it"><span>Следующий контакт</span><strong style="color:${c.nextContact<TODAY?'var(--red)':c.nextContact===TODAY?'var(--amber)':'var(--text)'}">${FD(c.nextContact)}</strong></div>`:''}
       ${c.potential?`<div class="info-it"><span>Потенциал</span><strong>${RM(c.potential)}</strong></div>`:''}
       <div class="info-it"><span>Без контакта</span><strong style="color:${days!==null&&days>=30?'var(--red)':'var(--text)'}">${days!==null?days+'д':'—'}</strong></div>
-      ${getChannels(c).length?`<div class="info-it"><span>Канал продаж</span><strong style="display:flex;gap:4px;flex-wrap:wrap">${getChannels(c).map(ch=>`<span style="padding:2px 8px;border-radius:20px;font-size:12px;font-weight:500;background:var(--blue-bg);color:var(--blue)">${ch}</span>`).join('')}</strong></div>`:''}
-      ${getFormats(c).length?`<div class="info-it"><span>Формат клиента</span><strong style="display:flex;gap:4px;flex-wrap:wrap">${getFormats(c).map(f=>`<span style="padding:2px 8px;border-radius:20px;font-size:12px;font-weight:500;background:var(--blue-bg);color:var(--blue)">${f}</span>`).join('')}</strong></div>`:''}
+      ${getChannels(c).length?`<div class="info-it"><span>Канал продаж</span><strong style="display:flex;gap:4px;flex-wrap:wrap">${getChannels(c).map(ch=>`<span style="padding:2px 8px;border-radius:20px;font-size:12px;font-weight:500;background:var(--blue-bg);color:var(--blue)">${esc(ch)}</span>`).join('')}</strong></div>`:''}
+      ${getFormats(c).length?`<div class="info-it"><span>Формат клиента</span><strong style="display:flex;gap:4px;flex-wrap:wrap">${getFormats(c).map(f=>`<span style="padding:2px 8px;border-radius:20px;font-size:12px;font-weight:500;background:var(--blue-bg);color:var(--blue)">${esc(f)}</span>`).join('')}</strong></div>`:''}
       ${c.serviceManager?`<div class="info-it"><span>Сервис-менеджер</span><strong>${esc(c.serviceManager)}</strong></div>`:''}
       ${c.payTerms?`<div class="info-it"><span>Условия оплаты</span><strong>${esc(c.payTerms)}</strong></div>`:''}
-      ${c.paymentDelayDays!=null?`<div class="info-it"><span>Отсрочка платежа</span><strong>${c.paymentDelayDays} ${pluralRu(c.paymentDelayDays,'день','дня','дней')}</strong></div>`:''}
+      ${c.paymentDelayDays!=null?`<div class="info-it"><span>Отсрочка платежа</span><strong>${esc(c.paymentDelayDays)} ${pluralRu(c.paymentDelayDays,'день','дня','дней')}</strong></div>`:''}
       ${c.creditLimit!=null?`<div class="info-it"><span>Кредитный лимит</span><strong>${RM(c.creditLimit)}</strong></div>`:''}
-      ${(c.websites||[]).length?`<div class="info-it" style="grid-column:1/-1"><span>Сайт и ссылки</span><strong style="display:flex;gap:8px;flex-wrap:wrap">${c.websites.map(w=>w.url?`<a href="${esc(w.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${esc(w.label||w.url)}</a>`:'').join('')}</strong></div>`:''}
+      ${(c.websites||[]).length?`<div class="info-it" style="grid-column:1/-1"><span>Сайт и ссылки</span><strong style="display:flex;gap:8px;flex-wrap:wrap">${c.websites.map(w=>w.url?`<a href="${esc(wbSafeHttpUrl(w.url))}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${esc(w.label||w.url)}</a>`:'').join('')}</strong></div>`:''}
       ${c.shipping?`<div class="info-it"><span>Отгрузка</span><strong>${esc(c.shipping)}</strong></div>`:''}
       ${c.sign?`<div class="info-it"><span>Вывеска</span><strong>${esc(c.sign)}</strong></div>`:''}
       ${c.region?`<div class="info-it"><span>Регион</span><strong>${esc(c.region)}</strong></div>`:''}
@@ -5754,8 +5770,8 @@ function renderClientDetailHTML(c){
         const txt=[p.city,p.address].filter(Boolean).join(', ');
         if(!txt&&!p.map2gis&&!p.mapYandex)return '';
         const links=[
-          p.map2gis?`<a class="geo-link" href="${esc(p.map2gis)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">📍 2ГИС</a>`:'',
-          p.mapYandex?`<a class="geo-link" href="${esc(p.mapYandex)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">📍 Яндекс</a>`:'',
+          p.map2gis?`<a class="geo-link" href="${esc(wbSafeHttpUrl(p.map2gis))}" target="_blank" rel="noopener" onclick="event.stopPropagation()">📍 2ГИС</a>`:'',
+          p.mapYandex?`<a class="geo-link" href="${esc(wbSafeHttpUrl(p.mapYandex))}" target="_blank" rel="noopener" onclick="event.stopPropagation()">📍 Яндекс</a>`:'',
         ].filter(Boolean).join(' ');
         return `<div class="info-it" style="grid-column:1/-1"><span>Ещё салон</span><strong>${esc(txt)||'—'}${links?' '+links:''}</strong></div>`;
       }).join('')}
@@ -5787,7 +5803,7 @@ function renderClientDetailHTML(c){
       ${offers.length?[...offers].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(o=>`<div class="contact-item">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
           <span class="cn">${esc(o.text)}</span>
-          <span class="status-badge" style="background:var(--bg);border:1px solid var(--border)"><span class="sdot ${OFFER_STATUS_M[o.status]?.dot||''}" style="margin-right:4px"></span>${OFFER_STATUS_M[o.status]?.l||o.status}</span>
+          <span class="status-badge" style="background:var(--bg);border:1px solid var(--border)"><span class="sdot ${OFFER_STATUS_M[o.status]?.dot||''}" style="margin-right:4px"></span>${esc(OFFER_STATUS_M[o.status]?.l||o.status)}</span>
         </div>
         <div class="ci" style="display:flex;align-items:center;justify-content:space-between">
           <span>${R(o.amount)} ${o.date?'· '+FD(o.date):''}${o.channel?' · '+esc(o.channel):''}</span>
@@ -5907,11 +5923,11 @@ function selectClient(id){ activeClient = (activeClient===id)?null:id; renderCli
 
 // Экспорт выбранных клиентов в Excel
 function exportSelectedClients(){
-  const selected = S.clients.filter(c=>selC.has(c.id));
+  const selected = wbExportClients().filter(c=>selC.has(c.id));
   if(!selected.length){toast('Выберите клиентов для экспорта');return;}
   const wb=XLSX.utils.book_new();
-  const data=[['ID','Имя','Компания','Телефон','Email','Потенциал','Теги','Заметка']];
-  selected.forEach(c=>{ data.push([c.id,c.name,c.company||'',c.phone||'',c.email||'',Number(c.potential||0),(c.tags||[]).join(', '),c.note||'']); });
+  const data=[['ID','Имя','Компания','Телефон','Email','Потенциал','Теги','Заметка','Контакты','Канал продаж','Формат клиента']];
+  selected.forEach(c=>{ data.push([c.id,c.name,c.company||'',c.phone||'',c.email||'',Number(c.potential||0),(c.tags||[]).join(', '),c.note||'',serializeContacts(c.contacts||[]),getChannels(c).join(', '),getFormats(c).join(', ')]); });
   const ws=XLSX.utils.aoa_to_sheet(data); XLSX.utils.book_append_sheet(wb,ws,'Клиенты');
   XLSX.writeFile(wb,`Клиенты_выбранные_${TODAY}.xlsx`); toast('Экспорт выполнен');
 }
@@ -6425,7 +6441,7 @@ function clearOSel(){selO.clear();renderOffers();}
 function delSelOffers(){if(!selO.size)return;const n=selO.size;confirm2('Удалить предложения',`Удалить ${n} ${pluralRu(n,'предложение','предложения','предложений')}?`,()=>{S.offers=S.offers.filter(o=>!selO.has(o.id));selO.clear();save();toast(`Удалено: ${n}`);renderOffers();});}
 // Экспорт выбранных предложений
 function exportSelectedOffers(){
-  const selected = S.offers.filter(o=>selO.has(o.id));
+  const selected = S.offers.filter(o=>selO.has(o.id) && wbCanExportRelated(o));
   if(!selected.length){toast('Выберите предложения для экспорта');return;}
   const wb=XLSX.utils.book_new();
   const data=[['ID','Предложение','Клиент','Сумма','Статус','Канал продаж','Дата']];
@@ -6792,7 +6808,7 @@ function exportTripExcel(){
   if(t.note)rows.push(['Заметка:',t.note]);
   rows.push([]);
   rows.push(['№','Объект','Категория','Статус','Город','Адрес','Телефон','Посещено','Результат визита','Заметка']);
-  (t.stops||[]).forEach((s,i)=>{
+  (t.stops||[]).filter(stop=>isAdmin()||isHeadRole()||(stop.type==='client'?S.clients.some(c=>c.id===stop.clientId && wbCanExportClient(c)):t.owner_id===currentUser?.id)).forEach((s,i)=>{
     const info=tripStopInfo(s);
     rows.push([i+1,info.name,info.category,info.status,info.city,info.address,info.phone,s.done?'Да':'',s.result||'',info.note]);
   });
@@ -7525,11 +7541,13 @@ function dbToLink(r){ return {id:r.id, description:r.description||'', url:r.url|
 function dbToStaff(r){ return {id:r.id, fullName:r.full_name||'', category:r.category||'', email:r.email||'', phone:r.phone||'', duties:r.duties||'', sort:r.sort||0}; }
 
 async function loadLinksData(){
+  const ctx=wbSessionContext();
   try{
     const [lRes,sRes]=await Promise.all([
       sb.from('links').select('*').is('deleted_at',null).order('sort').order('id'),
       sb.from('staff_contacts').select('*').is('deleted_at',null).order('sort').order('id'),
     ]);
+    if(!wbSameSession(ctx))return;
     if(lRes.error||sRes.error){ LK_TABLES_OK=false; return; }
     S.links=(lRes.data||[]).map(dbToLink);
     S.staff=(sRes.data||[]).map(dbToStaff);
@@ -7758,7 +7776,10 @@ function renderAnalytics(){ renderAnKpis(); renderFunnel(); renderFlow(); render
   const REP_LEGACY_KEY='wb_rep_data';   // старые отчёты «только на этом устройстве» (до 29.1.0)
   let repData={};
   let repRemoteState='idle';            // idle | loading | ok | missing | error
-  try{ const s=localStorage.getItem(REP_CACHE_KEY); if(s) repData=JSON.parse(s)||{}; }catch(e){}
+  window.wbResetReportCache=function(){repData={};repRemoteState='idle';};
+  window.wbLoadReportCache=function(){
+    repData={};try{const raw=localStorage.getItem(wbDataKey(REP_CACHE_KEY));if(raw)repData=JSON.parse(raw)||{};}catch(_){}
+  };
 
   function curKey(){ return repYear+'-'+(repMonth+1); }
   function fmt(n){ if(n===null||n===undefined||n==='')return null; const v=parseFloat(String(n).replace(/\s/g,'')); return isNaN(v)?null:v; }
@@ -7864,7 +7885,7 @@ function renderAnalytics(){ renderAnKpis(); renderFunnel(); renderFlow(); render
     const d=new Date(iso); if(isNaN(d)) return '';
     return d.toLocaleDateString('ru-RU')+', '+d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
   }
-  function repSaveCache(){ try{ localStorage.setItem(REP_CACHE_KEY,JSON.stringify(repData)); }catch(e){ /* кеш — не главное, данные в базе */ } }
+  function repSaveCache(){ try{ localStorage.setItem(wbDataKey(REP_CACHE_KEY),JSON.stringify(repData)); }catch(e){ /* кеш — не главное, данные в базе */ } }
   // Ошибка «таблицы reports нет» — значит, не запущен supabase/04_reports.sql.
   function repIsMissingTable(err){ const m=String(err&&(err.message||err.code)||''); return /42P01|PGRST205|reports.*(does not exist|not find|не существует)|relation .*reports/i.test(m); }
   function repErrText(err){
@@ -7876,16 +7897,18 @@ function renderAnalytics(){ renderAnKpis(); renderFunnel(); renderFlow(); render
   // Загрузка всех отчётов с сервера (при входе, при изменениях по Realtime, при догоняющей синхронизации).
   window.repLoadRemote=async function(){
     if(typeof sb==='undefined'||!sb||typeof currentUser==='undefined'||!currentUser) return;
-    repRemoteState='loading';
+    const ctx=wbSessionContext();repRemoteState='loading';
     try{
       const { data, error } = await sb.from('reports').select('year,month,rows,file_name,loaded_at,uploaded_by_name');
+      if(!wbSameSession(ctx))return;
       if(error){ repRemoteState=repIsMissingTable(error)?'missing':'error'; repRenderNav(); return; }
       const next={};
       (data||[]).forEach(r=>{ next[r.year+'-'+r.month]={rows:r.rows||[],loaded:repFmtLoaded(r.loaded_at),file:r.file_name||'',by:r.uploaded_by_name||''}; });
       repData=next; repRemoteState='ok';
       repSaveCache();
       await repMigrateLegacy();
-    }catch(e){ repRemoteState='error'; }
+    }catch(e){ if(wbSameSession(ctx))repRemoteState='error'; }
+    if(!wbSameSession(ctx))return;
     repRenderNav();
     const panel=document.getElementById('an-panel-reports');
     if(panel&&panel.style.display!=='none') repRender();
@@ -7898,16 +7921,20 @@ function renderAnalytics(){ renderAnKpis(); renderFunnel(); renderFlow(); render
   // загружать отчёты, месяцы, которых ещё нет на сервере, отправляются туда, после
   // чего локальная копия удаляется. Месяцы, уже загруженные кем-то на сервер, не трогаем.
   async function repMigrateLegacy(){
+    const ctx=wbSessionContext();if(!ctx.userId)return 0;
     let legacy=null;
+    if(!wbLegacyDataIsMine())return 0;
     try{ legacy=JSON.parse(localStorage.getItem(REP_LEGACY_KEY)||'null'); }catch(e){}
     if(!legacy||typeof legacy!=='object'||!repCanEdit()) return 0;
     let moved=0, failed=0;
     for(const key of Object.keys(legacy)){
+      if(!wbSameSession(ctx))return moved;
       const e=legacy[key]; const m=/^(\d{4})-(\d{1,2})$/.exec(key);
       if(!m||!e||!Array.isArray(e.rows)||!e.rows.length||repData[key]) continue;
       const rows=e.rows.map(r=>{ const o={}; REP_COLS.forEach(c=>{ if(r[c]!==undefined) o[c]=r[c]; }); return o; });
       const rec={year:+m[1],month:+m[2],rows,file_name:'(перенесено с устройства)',loaded_at:new Date().toISOString(),uploaded_by:currentUser.id,uploaded_by_name:currentProfile?.full_name||currentUser.email||''};
       const { error } = await sb.from('reports').upsert(rec,{onConflict:'year,month'});
+      if(!wbSameSession(ctx))return moved;
       if(error){ failed++; continue; }
       repData[key]={rows,loaded:repFmtLoaded(rec.loaded_at),file:rec.file_name,by:rec.uploaded_by_name}; moved++;
     }
@@ -7922,8 +7949,10 @@ function renderAnalytics(){ renderAnKpis(); renderFunnel(); renderFlow(); render
     if(!repCanEdit()){ alert('Загружать отчёты может сотрудник с назначенной ролью — обратитесь к администратору.'); return; }
     if(typeof isOnline==='function'&&!isOnline()){ alert('Нет подключения к интернету — отчёт сохраняется в общую базу, поэтому загрузить его можно только онлайн.'); return; }
     if(typeof XLSX==='undefined'||!XLSX.read){ alert('Модуль чтения Excel ещё не загрузился — проверьте интернет и попробуйте снова.'); return; }
+    const ctx=wbSessionContext();if(!ctx.userId)return;
     const rd=new FileReader();
     rd.onload=async function(e){
+      if(!wbSameSession(ctx))return;
       try{
         const wb=XLSX.read(e.target.result,{type:'array'});
         const ws=wb.Sheets[wb.SheetNames[0]];
@@ -7943,6 +7972,7 @@ function renderAnalytics(){ renderAnKpis(); renderFunnel(); renderFlow(); render
         const rec={year:y,month:mo+1,rows,file_name:String(file.name||'').slice(0,120),loaded_at:new Date().toISOString(),
           uploaded_by:currentUser?.id||null,uploaded_by_name:currentProfile?.full_name||currentUser?.email||''};
         const { error } = await sb.from('reports').upsert(rec,{onConflict:'year,month'});
+        if(!wbSameSession(ctx))return;
         if(error){ alert('Не удалось сохранить отчёт: '+repErrText(error)); return; }
         repData[y+'-'+(mo+1)]={rows,loaded:repFmtLoaded(rec.loaded_at),file:rec.file_name,by:rec.uploaded_by_name};
         repSaveCache();
@@ -7954,10 +7984,12 @@ function renderAnalytics(){ renderAnKpis(); renderFunnel(); renderFlow(); render
   };
 
   window.repDeleteMonth=async function(){
+    const ctx=wbSessionContext();if(!ctx.userId)return;
     const key=curKey(); if(!repData[key]) return;
     if(!repCanEdit()) return;
     if(!confirm('Удалить отчёт за '+MONTHS_RU[repMonth]+' '+repYear+'? Он удалится у всех сотрудников.')) return;
     const { error } = await sb.from('reports').delete().eq('year',repYear).eq('month',repMonth+1);
+    if(!wbSameSession(ctx))return;
     if(error){ alert('Не удалось удалить отчёт: '+repErrText(error)); return; }
     delete repData[key];
     repSaveCache();
@@ -8380,15 +8412,31 @@ function renderRegions(){
 function openPlanEdit(){ const months=planMonths().map(m=>({key:m.key,lbl:m.full})); document.getElementById('plan-form').innerHTML=months.map(m=>`<div class="fg"><label for="plan-${m.key}">${m.lbl}</label><input type="text" inputmode="numeric" id="plan-${m.key}" value="${formatAmountStatic(S.plans[m.key])}" placeholder="0" oninput="formatAmountInput(this)"></div>`).join(''); document.getElementById('m-plan').classList.add('open'); }
 function savePlan(){ document.querySelectorAll('[id^="plan-"]').forEach(el=>{const k=el.id.replace('plan-','');S.plans[k]=parseAmount(el.value);}); save(); closeModal('m-plan'); toast('План сохранён'); renderPlanChart(); renderStKpis(); }
 
-// === EXCEL EXPORT / IMPORT (без изменений) ===
+// === EXCEL EXPORT / IMPORT: ответственный при импорте, свои клиенты при экспорте ===
+// Экспорт — правило рабочего интерфейса, не запрет чтения общей статистики.
+// Общий доступ к статистике/контактам сохранён; RLS SELECT не меняется.
+function wbCanExportClient(c){
+  if(!currentUser || !currentProfile)return false;
+  return isAdmin() || isHeadRole() || (isManagerRole() && c.owner_id===currentUser.id);
+}
+function wbExportClients(){return S.clients.filter(wbCanExportClient);}
+function wbCanExportRelated(row){
+  if(!currentUser || !currentProfile)return false;
+  if(isAdmin() || isHeadRole())return true;
+  if(!isManagerRole())return false;
+  return row.clientId ? S.clients.some(c=>c.id===row.clientId && wbCanExportClient(c)) : row.owner_id===currentUser.id;
+}
+
+
 function buildExportWorkbook(){
+  const exportClients=wbExportClients();
   const wb=XLSX.utils.book_new();
-  const wsC=XLSX.utils.aoa_to_sheet([['ID','Имя (главный контакт)','Компания','Телефон','Email','Потенциал (₽)','Теги','Заметка','Контакты','Канал продаж','Формат клиента'],...S.clients.map(c=>{const cts=c.contacts&&c.contacts.length?c.contacts:[{name:c.name,phone:c.phone,email:c.email,position:''}];const ctsStr=serializeContacts(cts);return[c.id,c.name,c.company||'',c.phone||'',c.email||'',Number(c.potential||0),(c.tags||[]).join(', '),c.note||'',ctsStr,getChannels(c).join(', '),getFormats(c).join(', ')];})]); XLSX.utils.book_append_sheet(wb,wsC,'Клиенты');
-  const wsT=XLSX.utils.aoa_to_sheet([['ID','Тип','Приоритет','Описание','Клиент','Дата','Время','Выполнено','Повтор','Заметка'],...S.tasks.map(t=>{const cl=GC(t.clientId);return[t.id,TYPE_L[t.type]||t.type,PRIO_L[t.prio||'mid'],t.text,cl.name,FD(t.date),t.time||'',t.done?'Да':'Нет',t.repeat||'',t.note||''];})]); XLSX.utils.book_append_sheet(wb,wsT,'Задачи');
-  const wsO=XLSX.utils.aoa_to_sheet([['ID','Предложение','Клиент','Сумма (₽)','Статус','Канал продаж','Дата'],...S.offers.map(o=>{const cl=GC(o.clientId);return[o.id,o.text,cl.name,Number(o.amount||0),OFFER_STATUS_M[o.status]?.l||o.status,o.channel||'',FD(o.date||'')];})]); XLSX.utils.book_append_sheet(wb,wsO,'Предложения');
+  const wsC=XLSX.utils.aoa_to_sheet([['ID','Имя (главный контакт)','Компания','Телефон','Email','Потенциал (₽)','Теги','Заметка','Контакты','Канал продаж','Формат клиента'],...exportClients.map(c=>{const cts=c.contacts&&c.contacts.length?c.contacts:[{name:c.name,phone:c.phone,email:c.email,position:''}];const ctsStr=serializeContacts(cts);return[c.id,c.name,c.company||'',c.phone||'',c.email||'',Number(c.potential||0),(c.tags||[]).join(', '),c.note||'',ctsStr,getChannels(c).join(', '),getFormats(c).join(', ')];})]); XLSX.utils.book_append_sheet(wb,wsC,'Клиенты');
+  const wsT=XLSX.utils.aoa_to_sheet([['ID','Тип','Приоритет','Описание','Клиент','Дата','Время','Выполнено','Повтор','Заметка'],...S.tasks.filter(wbCanExportRelated).map(t=>{const cl=GC(t.clientId);return[t.id,TYPE_L[t.type]||t.type,PRIO_L[t.prio||'mid'],t.text,cl.name,FD(t.date),t.time||'',t.done?'Да':'Нет',t.repeat||'',t.note||''];})]); XLSX.utils.book_append_sheet(wb,wsT,'Задачи');
+  const wsO=XLSX.utils.aoa_to_sheet([['ID','Предложение','Клиент','Сумма (₽)','Статус','Канал продаж','Дата'],...S.offers.filter(wbCanExportRelated).map(o=>{const cl=GC(o.clientId);return[o.id,o.text,cl.name,Number(o.amount||0),OFFER_STATUS_M[o.status]?.l||o.status,o.channel||'',FD(o.date||'')];})]); XLSX.utils.book_append_sheet(wb,wsO,'Предложения');
   return wb;
 }
-function exportExcel(){ /* полный экспорт всех данных */
+function exportExcel(){ /* выгрузка по правилам текущей роли */
   const wb=buildExportWorkbook();
   XLSX.writeFile(wb,`WiseBase_${TODAY}.xlsx`); toast('Экспорт готов');
 }
@@ -8405,10 +8453,10 @@ function exportClientsTemplate(){
     'Формат: Салон','Формат: Интернет-магазин','Формат: Маркетплейс',
     'Тег: VIP','Тег: Тёплый','Тег: Холодный','Тег: Новый',
     'Дата след. контакта','Заметка'];
-  const rows=S.clients.map(c=>{
+  const rows=wbExportClients().flatMap(c=>{
     const primary=(c.contacts&&c.contacts[0])||{name:c.name,position:'',phone:c.phone,email:c.email};
     const chans=getChannels(c), fmts=getFormats(c), tags=c.tags||[];
-    return [
+    const primaryRow=[
       c.company||'', primary.name||'', primary.position||'', primary.phone||c.phone||'', primary.email||c.email||'',
       c.inn||'', c.region||'', c.city||'', c.address||'', Number(c.potential||0), CLIENT_TPL_STATUS_L[c.status]||'Неизвестный',
       chans.includes('ФМА')?'X':'', chans.includes('Beyosa')?'X':'', chans.includes('Комплектация')?'X':'',
@@ -8416,13 +8464,15 @@ function exportClientsTemplate(){
       tags.includes('vip')?'X':'', tags.includes('warm')?'X':'', tags.includes('cold')?'X':'', tags.includes('new')?'X':'',
       c.nextContact||'', c.note||'',
     ];
+    const extra=(c.contacts||[]).slice(1).map(ct=>['',ct.name||'',ct.position||'',ct.phone||'',ct.email||'',...Array(18).fill('')]);
+    return [primaryRow,...extra];
   });
   const wb=XLSX.utils.book_new();
   const ws=XLSX.utils.aoa_to_sheet([headers,...rows]);
   ws['!cols']=headers.map((h,i)=>({wch:i===0?26:i===22?30:i===8?26:16}));
   XLSX.utils.book_append_sheet(wb,ws,'Клиенты');
   XLSX.writeFile(wb,`Клиенты_${TODAY}.xlsx`);
-  toast(`Экспортировано клиентов: ${rows.length}`);
+  toast(`Экспортировано клиентов: ${wbExportClients().length}`);
 }
 
 // === АВТОСОХРАНЕНИЕ В EXCEL (раз в 30 минут — скачивание новой копии-бэкапа) ===
@@ -8469,41 +8519,119 @@ function updAutoSaveUI(){
     lbl.textContent='Включено · первый бэкап будет через 30 минут';
   }
 }
-// Импорт клиентов в формате шаблона (те же колонки, что выдаёт «Экспорт клиентов»).
-// Несколько строк подряд с одной компанией = несколько контактов одного клиента.
-function importClientsTemplateRows(rows){
-  let n=0,cur=null,skip=false;
-  const sv=v=>String(v==null?'':v).trim();
-  rows.forEach(r=>{
-    const company=sv(r[0]);
-    const ct={name:sv(r[1]),position:sv(r[2]),phone:sv(r[3]),email:sv(r[4])};
-    const hasCt=!!(ct.name||ct.position||ct.phone||ct.email);
-    const isNewClient=!!(company||sv(r[10]));
-    if(isNewClient){
-      cur=null;
-      if(!company&&!hasCt)return;
-      skip=!!S.clients.find(x=>(x.company||'')===company&&(company||x.name===ct.name));
-      if(skip)return;
-      const contacts=hasCt?[ct]:[];
-      const nm=ct.name||company;
-      const p=nm.split(/\s+/).filter(Boolean);
-      const tags=[];if(sv(r[17]))tags.push('vip');if(sv(r[18]))tags.push('warm');if(sv(r[19]))tags.push('cold');if(sv(r[20]))tags.push('new');
-      const channels=[];if(sv(r[11]))channels.push('ФМА');if(sv(r[12]))channels.push('Beyosa');if(sv(r[13]))channels.push('Комплектация');
-      const formats=[];if(sv(r[14]))formats.push('Салон');if(sv(r[15]))formats.push('Интернет-магазин');if(sv(r[16]))formats.push('Маркетплейс');
-      cur={id:S.nid.c++,name:nm,company,phone:ct.phone,email:ct.email,inn:sv(r[5]),region:sv(r[6]),city:sv(r[7]),address:sv(r[8]),potential:Number(r[9])||0,status:CLIENT_TPL_STATUS_R[sv(r[10])]||'unknown',channels,formats,tags,nextContact:sv(r[21]),note:sv(r[22]),contacts,avatar:((p[0]?.[0]||'')+(p[1]?.[0]||'')).toUpperCase()||'—',color:COLS[ci++%COLS.length],history:[]};
-      S.clients.push(cur);n++;
-    } else if(!skip&&cur&&hasCt){
-      cur.contacts.push(ct);
-      if(cur.contacts.length===1){ // у первой строки контакта не было — подтягиваем главный контакт
-        cur.name=ct.name||cur.name;cur.phone=ct.phone;cur.email=ct.email;
-        const p=cur.name.split(/\s+/).filter(Boolean);
-        cur.avatar=((p[0]?.[0]||'')+(p[1]?.[0]||'')).toUpperCase()||'—';
-      }
-    }
-  });
-  return n;
+const WB_IMPORT_MAX_BYTES=10*1024*1024, WB_IMPORT_MAX_ROWS=5000;
+let wbImportBusy=false;
+function wbImportText(v){return String(v==null?'':v).trim();}
+function wbImportDate(v){
+  const s=wbImportText(v);if(!s)return '';
+  let out=s;
+  if(typeof v==='number' && Number.isFinite(v))out=new Date(Date.UTC(1899,11,30)+Math.round(v)*86400000).toISOString().slice(0,10);
+  else if(/^\d{2}\.\d{2}\.\d{4}$/.test(s)){const [d,m,y]=s.split('.');out=`${y}-${m}-${d}`;}
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(out) || !Number.isFinite(Date.parse(out+'T00:00:00Z')) || new Date(out+'T00:00:00Z').toISOString().slice(0,10)!==out)throw new Error('Некорректная дата: '+s);
+  return out;
 }
-function importExcel(input){ const file=input.files[0];if(!file)return; const reader=new FileReader(); reader.onload=e=>{ try{ const wb=XLSX.read(e.target.result,{type:'array'}); let n=0; if(wb.SheetNames.includes('Клиенты')){ const rowsC=XLSX.utils.sheet_to_json(wb.Sheets['Клиенты'],{header:1}); if(String((rowsC[0]||[])[0]||'').trim()==='Компания *'){ n+=importClientsTemplateRows(rowsC.slice(1)); } else rowsC.slice(1).forEach(r=>{ if(!r[1])return; const name=String(r[1]); if(S.clients.find(c=>c.name===name&&(c.company||'')===(r[2]||'')))return; const contacts=parseContactsCell(r[8]); const primary=contacts[0]||{name:'',phone:'',email:''}; const finalName=primary.name||name; const p=finalName.trim().split(/\s+/).filter(Boolean); S.clients.push({id:S.nid.c++,name:finalName,company:r[2]||'',phone:primary.phone||r[3]||'',email:primary.email||r[4]||'',potential:r[5]||0, tags:(r[6]||'').split(',').map(t=>t.trim()).filter(Boolean),note:r[7]||'', contacts, avatar:((p[0]?.[0]||'')+(p[1]?.[0]||'')).toUpperCase()||'—',color:COLS[ci++%COLS.length],history:[],channel:r[9]||'',format:r[10]||''}); n++; }); } if(wb.SheetNames.includes('Задачи')){ const tRev={};Object.keys(TYPE_L).forEach(k=>tRev[TYPE_L[k]]=k); const pRev={};Object.keys(PRIO_L).forEach(k=>pRev[PRIO_L[k]]=k); XLSX.utils.sheet_to_json(wb.Sheets['Задачи'],{header:1}).slice(1).forEach(r=>{ if(!r[3])return; const text=String(r[3]); if(S.tasks.find(t=>t.text===text))return; const cl=S.clients.find(c=>c.name===(r[4]||'')); let ds=''; if(r[5]&&String(r[5]).includes('.')){const p=String(r[5]).split('.');ds=`${p[2]}-${p[1]}-${p[0]}`;}else ds=TODAY; S.tasks.push({id:S.nid.t++,type:tRev[r[1]]||'task',prio:pRev[r[2]]||'mid',text,clientId:cl?cl.id:0,date:ds,time:r[6]||'',done:r[7]==='Да',repeat:r[8]||'',note:r[9]||''}); n++; }); } save(); toast(`Импортировано: ${n}`); const p=currentPageId(); showPage(p); }catch(err){toast('Ошибка: '+err.message);} input.value=''; }; reader.readAsArrayBuffer(file); }
+function wbImportClientKey(c){return c.inn?'inn:'+c.inn:'name:'+wbImportText(c.company).toLowerCase()+'|'+(!c.company?wbImportText(c.name).toLowerCase():'');}
+function wbParseClientRows(rows,template){
+  if(rows.length>WB_IMPORT_MAX_ROWS)throw new Error('Не более '+WB_IMPORT_MAX_ROWS+' строк за один импорт');
+  const out=[];let cur=null;
+  const sv=wbImportText;
+  for(const r of rows){
+    if(r.some(v=>sv(v).length>10000))throw new Error('Слишком длинный текст в ячейке');
+    if(template){
+      const company=sv(r[0]), ct={name:sv(r[1]),position:sv(r[2]),phone:sv(r[3]),email:sv(r[4])};
+      const has=!!(ct.name||ct.position||ct.phone||ct.email);
+      if(!company && !sv(r[10]) && has && cur){cur.contacts.push(ct);if(!cur.phone)cur.phone=ct.phone;if(!cur.email)cur.email=ct.email;continue;}
+      if(!company && !has)continue;
+      const channels=['ФМА','Beyosa','Комплектация'].filter((_,i)=>sv(r[11+i]));
+      const formats=['Салон','Интернет-магазин','Маркетплейс'].filter((_,i)=>sv(r[14+i]));
+      const tags=['vip','warm','cold','new'].filter((_,i)=>sv(r[17+i]));
+      cur={name:ct.name||company,company,phone:ct.phone,email:ct.email,inn:sv(r[5]),region:sv(r[6]),city:sv(r[7]),address:sv(r[8]),potential:Number(r[9])||0,status:CLIENT_TPL_STATUS_R[sv(r[10])]||'unknown',channels,formats,tags,nextContact:wbImportDate(r[21]),note:sv(r[22]),contacts:has?[ct]:[]};
+    }else{
+      if(!sv(r[1]))continue;
+      const contacts=parseContactsCell(sv(r[8]));const primary=contacts[0]||{};
+      cur={name:primary.name||sv(r[1]),company:sv(r[2]),phone:primary.phone||sv(r[3]),email:primary.email||sv(r[4]),potential:Number(r[5])||0,tags:sv(r[6]).split(',').map(s=>s.trim()).filter(t=>['vip','warm','cold','new'].includes(t)),note:sv(r[7]),contacts,channels:sv(r[9]).split(',').map(s=>s.trim()).filter(s=>['ФМА','Beyosa','Комплектация'].includes(s)),formats:sv(r[10]).split(',').map(s=>s.trim()).filter(s=>['Салон','Интернет-магазин','Маркетплейс'].includes(s)),status:'unknown'};
+    }
+    out.push(cur);
+  }
+  return out;
+}
+async function wbPersistImportedClients(clients,ctx){
+  const result={saved:0,skipped:0,error:null,stopped:false};
+  const known=S.clients.filter(c=>c.owner_id===ctx.userId).slice();
+  for(const c of clients){
+    if(!wbSameSession(ctx)){result.error='Аккаунт изменился. Импорт остановлен';result.stopped=true;break;}
+    if(known.some(x=>(c.inn && x.inn)?c.inn===x.inn:(wbImportText(c.company).toLowerCase()===wbImportText(x.company).toLowerCase() && (!!c.company || wbImportText(c.name).toLowerCase()===wbImportText(x.name).toLowerCase())))){result.skipped++;continue;}
+    const p=c.name.split(/\s+/).filter(Boolean);
+    const values={...clientToDbFields(c),owner_id:ctx.userId,avatar:((p[0]?.[0]||'')+(p[1]?.[0]||'')).toUpperCase()||'—',color:COLS[ci%COLS.length]};
+    // Прямое подтверждение сервера: импорт не объявляется успешным только по локальному save().
+    // Нет автоматического повторения insert после неопределённого сетевого результата.
+    let res;try{res=await sb.from('clients').insert(values).select().single();}catch(e){res={error:e};}
+    if(!wbSameSession(ctx)){result.error='Аккаунт изменился. Проверьте уже сохранённые строки после входа';result.stopped=true;break;}
+    if(res.error || !res.data || res.data.id==null){result.error=(res.error&&res.error.message)||'Сервер не подтвердил запись';result.stopped=true;break;}
+    const saved=dbToClient(res.data,[]);const at=S.clients.findIndex(x=>x.id===saved.id);
+    if(at<0)S.clients.push(saved);else S.clients[at]=saved;
+    known.push(c);result.saved++;ci++;
+    save();
+  }
+  return result;
+}
+async function importClientsTemplateRows(rows){
+  if(!currentUser || !(isAdmin()||isHeadRole()||isManagerRole()))throw new Error('Сначала войдите в CRM с назначенной ролью');
+  if(!isOnline())throw new Error('Для импорта подключитесь к интернету');
+  return wbPersistImportedClients(wbParseClientRows(rows,true),wbSessionContext());
+}
+async function wbImportWorkbook(wb){
+  if(!currentUser || !(isAdmin()||isHeadRole()||isManagerRole()))throw new Error('Сначала войдите в CRM с назначенной ролью');
+  if(!isOnline())throw new Error('Для импорта подключитесь к интернету');
+  const ctx=wbSessionContext();
+  const r={saved:0,skipped:0,tasksSaved:0,error:null,stopped:false};
+  if(!wb.SheetNames.includes('Клиенты') && !wb.SheetNames.includes('Задачи'))throw new Error('Не найден лист «Клиенты» или «Задачи»');
+  let tasks=[];
+  if(wb.SheetNames.includes('Задачи')){tasks=XLSX.utils.sheet_to_json(wb.Sheets['Задачи'],{header:1}).slice(1);if(tasks.length>WB_IMPORT_MAX_ROWS)throw new Error('Слишком много задач в файле');}
+  if(wb.SheetNames.includes('Клиенты')){
+    const rows=XLSX.utils.sheet_to_json(wb.Sheets['Клиенты'],{header:1});
+    const template=wbImportText((rows[0]||[])[0])==='Компания *';
+    Object.assign(r,await wbPersistImportedClients(wbParseClientRows(rows.slice(1),template),ctx));
+  }
+  if(r.stopped)return r;
+  const tRev=Object.fromEntries(Object.entries(TYPE_L).map(([k,v])=>[v,k]));
+  const pRev=Object.fromEntries(Object.entries(PRIO_L).map(([k,v])=>[v,k]));
+  for(const row of tasks){
+    if(!wbSameSession(ctx)){r.error='Аккаунт изменился. Импорт остановлен';r.stopped=true;break;}
+    const text=wbImportText(row[3]);if(!text)continue;
+    if(S.tasks.some(t=>t.owner_id===ctx.userId && t.text===text)){r.skipped++;continue;}
+    const clientName=wbImportText(row[4]);const matches=S.clients.filter(c=>c.owner_id===ctx.userId && c.name===clientName);
+    if(clientName && clientName!=='—' && matches.length!==1){r.error='Задача «'+text+'»: клиент не найден однозначно среди ваших клиентов';r.stopped=true;break;}
+    let date;try{date=wbImportDate(row[5])||TODAY;}catch(e){r.error=e.message;r.stopped=true;break;}
+    const values={text,owner_id:ctx.userId,client_id:matches[0]?.id||null,type:tRev[row[1]]||'task',prio:pRev[row[2]]||'mid',date,time:wbImportText(row[6]),done:row[7]==='Да',repeat:wbImportText(row[8]),note:wbImportText(row[9]),is_shared:false};
+    let res;try{res=await sb.from('tasks').insert(values).select().single();}catch(e){res={error:e};}
+    if(!wbSameSession(ctx)){r.error='Аккаунт изменился. Импорт остановлен';r.stopped=true;break;}
+    if(res.error || !res.data || res.data.id==null){r.error=res.error?.message||'Сервер не подтвердил задачу';r.stopped=true;break;}
+    const task=dbToTask(res.data);const at=S.tasks.findIndex(t=>t.id===task.id);if(at<0)S.tasks.push(task);else S.tasks[at]=task;
+    r.tasksSaved++;save();
+  }
+  return r;
+}
+async function importExcel(input){
+  const file=input.files[0];if(!file)return;
+  if(wbImportBusy){toast('Импорт уже выполняется');input.value='';return;}
+  if(!currentUser || !(isAdmin()||isHeadRole()||isManagerRole())){toast('Сначала войдите в CRM с назначенной ролью');input.value='';return;}
+  if(!isOnline()){toast('Для импорта подключитесь к интернету');input.value='';return;}
+  if(file.size>WB_IMPORT_MAX_BYTES){toast('Файл слишком большой: максимум 10 МБ');input.value='';return;}
+  wbImportBusy=true;const ctx=wbSessionContext();
+  try{
+    toast('Импорт: сохраняем записи в CRM…');
+    const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error('Не удалось прочитать файл'));reader.readAsArrayBuffer(file);});
+    if(!wbSameSession(ctx))throw new Error('Аккаунт изменился. Выберите файл заново');
+    const wb=XLSX.read(data,{type:'array'});const r=await wbImportWorkbook(wb);
+    if(!wbSameSession(ctx))return;
+    showPage(currentPageId());
+    if(r.error){toast(`Сохранено клиентов: ${r.saved}, задач: ${r.tasksSaved}. Импорт остановлен: ${r.error}. Обновите данные перед повтором`);}
+    else toast(`Сохранено в CRM: клиентов ${r.saved}, задач ${r.tasksSaved}. Дубликатов пропущено: ${r.skipped}`);
+  }catch(e){if(wbSameSession(ctx))toast('Ошибка импорта: '+e.message);}
+  finally{wbImportBusy=false;input.value='';}
+}
+
 
 // === PUSH NOTIFICATIONS + SERVICE WORKER + ЦЕНТР УВЕДОМЛЕНИЙ ===
 function registerSW(){
@@ -8971,16 +9099,30 @@ const sb = (typeof supabase !== 'undefined' && supabase && supabase.createClient
 const OQK='crm_offline_queue_v1';
 let offlineQueue=[];
 let flushing=false;
+let _queueOwner=null, wbFlushToken=0;
 let tmpIdSeq=-1; // временные локальные id для оффлайн-созданных записей — отрицательные, чтобы не путать с настоящими
 // Карта соответствия временный id -> настоящий id (после успешной синхронизации insert).
 let tmpIdMap={};
 
 function loadOfflineQueue(){
-  try{const s=localStorage.getItem(OQK);offlineQueue=s?JSON.parse(s):[];}catch(e){offlineQueue=[];}
-  if(!Array.isArray(offlineQueue))offlineQueue=[];
+  const uid=currentUser?.id;if(!uid){offlineQueue=[];tmpIdMap={};_queueOwner=null;return;}
+  _queueOwner=uid;
+  try{
+    const key=wbDataKey(OQK);let raw=localStorage.getItem(key);
+    if(!raw && wbLegacyDataIsMine()){
+      const legacy=localStorage.getItem(OQK);
+      if(legacy){const old=JSON.parse(legacy);if(Array.isArray(old)){raw=JSON.stringify(old.map(d=>({...d,author_id:uid,status:'failed',lastError:'Старая очередь: подтвердите принадлежность правки этому аккаунту и проверьте, нет ли уже записи на сервере'})));localStorage.setItem(key,raw);localStorage.removeItem(OQK);}}
+    }
+    const saved=JSON.parse(raw||'[]');offlineQueue=Array.isArray(saved)?saved.filter(d=>d.author_id===uid):[];
+    tmpIdMap=JSON.parse(localStorage.getItem(wbDataKey(OQK+':ids'))||'{}')||{};
+  }catch(_){offlineQueue=[];tmpIdMap={};}
+  const used=[...offlineQueue.map(d=>d.tmpId),...Object.keys(tmpIdMap).map(Number),...['clients','tasks','offers','links','staff','trips'].flatMap(k=>(S[k]||[]).map(x=>x.id))].filter(n=>Number.isSafeInteger(n)&&n<0);
+  tmpIdSeq=Math.min(-1,...used.map(n=>n-1));
 }
 function persistOfflineQueue(){
-  try{localStorage.setItem(OQK,JSON.stringify(offlineQueue));}catch(e){}
+  if(!currentUser || _queueOwner!==currentUser.id)return;
+  try{localStorage.setItem(wbDataKey(OQK),JSON.stringify(offlineQueue));localStorage.setItem(wbDataKey(OQK+':ids'),JSON.stringify(tmpIdMap));}
+  catch(e){toast('Не удалось сохранить очередь на устройстве. Не закрывайте CRM, пока не восстановится связь');}
   updateOfflineIndicator();
 }
 function isOnline(){ return navigator.onLine!==false; }
@@ -9023,20 +9165,19 @@ function resolveTmpId(v){
   if(typeof v==='number' && v<0 && tmpIdMap[v]!=null) return tmpIdMap[v];
   return v;
 }
-function resolveTmpRefs(values){
+function resolveTmpRefs(values,key=''){
   if(values==null)return values;
-  if(typeof values==='number')return resolveTmpId(values);
-  if(Array.isArray(values))return values.map(resolveTmpRefs);
-  if(typeof values==='object'){
-    const out={};
-    for(const k in values){ out[k]=resolveTmpRefs(values[k]); }
-    return out;
-  }
+  if(typeof values==='number')return /^(id|client_id|clientId|task_id|offer_id)$/.test(key)?resolveTmpId(values):values;
+  if(Array.isArray(values))return values.map(v=>resolveTmpRefs(v,key));
+  if(typeof values==='object'){const out={};for(const k of Object.keys(values))out[k]=resolveTmpRefs(values[k],k);return out;}
   return values;
 }
 
 // Поставить операцию в очередь.
 function enqueueOp(d){
+  if(!currentUser || (d.author_id && d.author_id!==currentUser.id))return false;
+  if(_queueOwner!==currentUser.id)loadOfflineQueue();
+  d.author_id=currentUser.id;d.status=d.status||'pending';
   d.id='oq_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);
   d.ts=Date.now();
   offlineQueue.push(d);
@@ -9048,18 +9189,28 @@ function enqueueOp(d){
 //   opts.returning — нужен ли сгенерированный id (для insert)
 //   opts.tmpId — заранее выданный временный id (для оптимистичного создания)
 async function dbWrite(d, opts={}){
+  if(!currentUser)return {data:null,error:{message:'Сначала войдите в CRM'},queued:false};
+  const ctx=wbSessionContext();if(_queueOwner!==ctx.userId)loadOfflineQueue();
   d=JSON.parse(JSON.stringify(d)); // защищаемся от мутаций снаружи
+  d.author_id=ctx.userId;
+  if(opts.tmpId!=null)tmpIdSeq=Math.min(tmpIdSeq,opts.tmpId-1);
   if(opts.returning)d.returning=true;
   if(opts.tmpId!=null)d.tmpId=opts.tmpId; // храним внутри дескриптора — нужно при разгрузке очереди
   if(isOnline()){
     try{
       const res=await execDescriptor(d);
-      if(res.error && isNetworkError(res.error)){ enqueueOp(d); return {data:null,error:null,queued:true,tmpId:opts.tmpId}; }
+      if(!wbSameSession(ctx))return {data:null,error:{message:'Аккаунт изменился; проверьте результат после входа'},queued:false};
+      if(res.error && isNetworkError(res.error)){ if(d.op==='insert'){d.status='failed';d.lastError='Нет подтверждения вставки: проверьте сервер перед повтором';} enqueueOp(d); return {data:null,error:null,queued:true,tmpId:opts.tmpId}; }
+      if(!res.error && d.op==='insert' && opts.returning && res.data?.id==null){
+        d.status='failed';d.lastError='Сервер не вернул ID: проверьте запись перед повтором';enqueueOp(d);
+        return {data:null,error:null,queued:true,tmpId:opts.tmpId};
+      }
       // если запись insert с временным id — запомним соответствие
-      if(d.op==='insert' && opts.tmpId!=null && res.data && res.data.id!=null){ tmpIdMap[opts.tmpId]=res.data.id; }
+      if(d.op==='insert' && opts.tmpId!=null && res.data && res.data.id!=null){ tmpIdMap[opts.tmpId]=res.data.id; persistOfflineQueue(); }
       return {...res,queued:false};
     }catch(e){
-      if(isNetworkError(e)){ enqueueOp(d); return {data:null,error:null,queued:true,tmpId:opts.tmpId}; }
+      if(!wbSameSession(ctx))return {data:null,error:{message:'Аккаунт изменился'},queued:false};
+      if(isNetworkError(e)){ if(d.op==='insert'){d.status='failed';d.lastError='Нет подтверждения вставки: проверьте сервер перед повтором';} enqueueOp(d); return {data:null,error:null,queued:true,tmpId:opts.tmpId}; }
       return {data:null,error:e,queued:false};
     }
   }else{
@@ -9071,27 +9222,44 @@ async function dbWrite(d, opts={}){
 // Проиграть очередь по порядку. Останавливаемся на первой сетевой ошибке
 // (значит, связь снова пропала) и оставляем остаток на следующий раз.
 async function flushQueue(){
-  if(flushing || !isOnline() || !offlineQueue.length) return;
-  flushing=true;
-  updateOfflineIndicator();
+  if(flushing || !currentUser || _queueOwner!==currentUser.id || !isOnline() || !offlineQueue.length)return;
+  const ctx=wbSessionContext(),token=++wbFlushToken;
+  flushing=true;updateOfflineIndicator();
   try{
-    while(offlineQueue.length){
+    while(wbSameSession(ctx) && token===wbFlushToken && offlineQueue.length){
       const d=offlineQueue[0];
+      if(d.author_id!==ctx.userId || d.status==='failed')break;
       let res;
-      try{ res=await execDescriptor({...d,returning:d.op==='insert'&&d.tmpId!=null}); }
-      catch(e){ if(isNetworkError(e)){break;} res={error:e}; }
-      if(res && res.error && isNetworkError(res.error)) break; // сеть снова пропала
-      // Успех (или неретраибл-ошибка данных, которую нет смысла крутить вечно): снимаем с очереди.
-      if(d.op==='insert' && d.tmpId!=null && res && res.data && res.data.id!=null){ tmpIdMap[d.tmpId]=res.data.id; }
-      offlineQueue.shift();
-      persistOfflineQueue();
+      try{res=await execDescriptor({...d,returning:d.op==='insert'&&d.tmpId!=null});}catch(e){res={error:e};}
+      if(!wbSameSession(ctx) || token!==wbFlushToken)return;
+      if(res?.error){
+        if(isNetworkError(res.error)){
+          // Сервер мог выполнить insert до обрыва ответа. Не повторяем его молча.
+          if(d.op==='insert'){d.status='failed';d.lastError='Нет подтверждения вставки. Проверьте запись на сервере перед повтором';persistOfflineQueue();}
+          break;
+        }
+        d.status='failed';d.lastError=String(res.error.message||res.error);persistOfflineQueue();
+        toast('Изменение не принято сервером и сохранено в очереди: '+d.lastError);break;
+      }
+      if(d.op==='insert' && d.tmpId!=null){
+        if(res?.data?.id==null){d.status='failed';d.lastError='Сервер не вернул ID созданной записи';persistOfflineQueue();break;}
+        tmpIdMap[d.tmpId]=res.data.id;
+      }
+      offlineQueue.shift();persistOfflineQueue();
     }
-  } finally {
-    flushing=false;
-    updateOfflineIndicator(!offlineQueue.length);
-    // После разгрузки очереди подтягиваем свежие данные.
-    if(!offlineQueue.length && isOnline() && currentUser){ try{ await syncFromSupabase(); renderAll&&renderAll(); }catch(e){} }
+  }finally{
+    if(token===wbFlushToken){
+      flushing=false;updateOfflineIndicator(!offlineQueue.length);
+      if(wbSameSession(ctx) && !offlineQueue.length && isOnline()){
+        try{await syncFromSupabase();if(wbSameSession(ctx)){renderClients();renderTaskPage();renderOffers();}}catch(_){}
+      }
+    }
   }
+}
+function retryOfflineQueue(){
+  const failed=offlineQueue.find(d=>d.status==='failed');
+  if(!failed){flushQueue();return;}
+  confirm2('Неотправленные изменения',`${failed.lastError||'Ошибка записи'}. Перед повтором вставки проверьте, не появилась ли запись на сервере. Повторить отправку?`,()=>{failed.status='pending';failed.lastError=null;persistOfflineQueue();flushQueue();},'Повторить');
 }
 
 function updateOfflineIndicator(showOk){
@@ -9100,7 +9268,11 @@ function updateOfflineIndicator(showOk){
   const n=offlineQueue.length;
   const set=(el,txt,cls,tip)=>{if(!el)return;el.style.display='';el.textContent=txt;el.className=cls;el.title=tip||'';};
   const hide=el=>{if(el)el.style.display='none';};
-  if(!isOnline()){
+  const failed=offlineQueue.filter(d=>d.status==='failed').length;
+  if(failed){
+    set(full,`⚠️ ${failed} с ошибкой · в очереди ${n}`,'offline-badge pending','Правки сохранены. Нажмите, чтобы проверить и повторить');
+    set(chip,`⚠️ ${n}`,'offline-chip pending','Есть неотправленные правки: нажмите для проверки');
+  }else if(!isOnline()){
     set(full,n?`📴 Офлайн · ${n} — сохранено на устройстве`:'📴 Офлайн — изменения сохраняются на устройстве','offline-badge off');
     set(chip,n?`📴 ${n}`:'📴 офлайн','offline-chip off',n?`Офлайн: ${n} ${pluralRu(n,'изменение','изменения','изменений')} сохранено на устройстве — отправятся при появлении сети`:'Офлайн — изменения сохраняются на устройстве');
   }else if(n){
@@ -9123,6 +9295,53 @@ window.addEventListener('offline', ()=>{ updateOfflineIndicator(); });
 
 let currentUser = null;
 let currentProfile = null;
+// Контекст аккаунта инвалидируется при выходе/смене пользователя.
+let wbSessionGeneration=0;
+function wbSessionContext(){return {userId:currentUser?.id||null,generation:wbSessionGeneration};}
+function wbSameSession(ctx){return !!ctx.userId && currentUser?.id===ctx.userId && ctx.generation===wbSessionGeneration;}
+function wbDataKey(key,userId=currentUser?.id){return userId?key+':'+new URL(SUPABASE_URL).host+':'+userId:null;}
+function wbLegacyDataIsMine(){
+  if(!currentUser)return false;
+  try{
+    let owner=localStorage.getItem('wb_legacy_data_owner');
+    if(!owner){owner=JSON.parse(localStorage.getItem('wisebase_profile_cache')||'null')?.id;if(owner)localStorage.setItem('wb_legacy_data_owner',owner);}
+    return owner===currentUser.id;
+  }catch(_){return false;}
+}
+function wbEmptyState(){return {clients:[],tasks:[],offers:[],trips:[],links:[],staff:[],plans:{},nid:{c:1,t:1,o:1}};}
+function wbResetSessionState(){
+  const uid=currentUser?.id;const cacheKey=uid?wbDataKey(SK,uid):null;
+  wbSessionGeneration++;_syncGen++;wbFlushToken++;
+  stopNotificationPolling();stopAutoSave();stopRealtime();
+  if(_lockTimer){clearInterval(_lockTimer);_lockTimer=null;}
+  clearTimeout(lkTimer);lkPending.clear();clearTimeout(_prefsTimer);_prefsTimer=null;
+  S=wbEmptyState();undoStack=[];redoStack=[];_lastSnapshot=null;
+  currentProfile=null;allProfiles=[];delegatedFrom=new Set();selC.clear();selT.clear();selO.clear();
+  activeClient=null;editClientId=null;histClientId=null;activeOwnerFilter='';adminViewOwners=null;
+  offlineQueue=[];tmpIdMap={};tmpIdSeq=-1;_queueOwner=null;flushing=false;
+  notifList=[];notifSeenKeys.clear();_prefsLastSent=null;
+  if(window.wbResetReportCache)window.wbResetReportCache();
+  // Незавершённые операции остаются только в персональной очереди прежнего пользователя.
+  // Рабочие снимки и отчёты удаляются при явном выходе; очередь без предупреждения не стираем.
+  const cleared=cacheKey?idbDelete(cacheKey).catch(()=>{}):Promise.resolve();
+  if(uid){try{localStorage.removeItem(wbDataKey(PROFILE_CACHE_KEY,uid));localStorage.removeItem(wbDataKey('wb_rep_cache',uid));}catch(_){}}
+  document.querySelectorAll('.overlay.open').forEach(el=>el.classList.remove('open'));
+  const pw=document.getElementById('login-password');if(pw)pw.value='';
+  updateUndoRedoButtons();updateNotifBadge();
+  return cleared;
+}
+async function wbUnsubscribeDevice(){
+  const ctx=wbSessionContext();if(!ctx.userId)return;
+  try{
+    if(!navigator.serviceWorker)return;
+    const reg=await navigator.serviceWorker.getRegistration();const sub=reg&&await reg.pushManager.getSubscription();
+    if(!sub||!wbSameSession(ctx))return;
+    const endpoint=sub.endpoint;
+    await sub.unsubscribe();
+    if(wbSameSession(ctx) && isOnline())await sb.from('push_subscriptions').delete().eq('endpoint',endpoint).eq('user_id',ctx.userId);
+  }catch(_){/* При недоступной сети отзыв браузерной подписки/серверной строки может требовать повтора. */}
+}
+
 // true после первой полной инициализации приложения — нужен, чтобы отличить настоящий
 // вход от повторного события SIGNED_IN (Supabase шлёт его и при тихом обновлении
 // токена, например при возврате на вкладку) и не запускать initApp() заново.
@@ -9161,11 +9380,32 @@ async function forgotPassword() {
   errEl.textContent = 'Письмо со ссылкой для сброса пароля отправлено на ' + email;
 }
 
-async function logoutUser() { await sb.auth.signOut(); }
+function wbClearAuthStorage(){
+  const key='sb-'+new URL(SUPABASE_URL).hostname.split('.')[0]+'-auth-token';
+  wbAuthStorage.removeItem(key);wbAuthStorage.removeItem(key+'-code-verifier');
+}
+async function wbFinishLocalLogout(){
+  const cleared=wbResetSessionState();
+  wbClearAuthStorage();currentUser=null;currentProfile=null;appInitialized=false;
+  showLoginScreen();await cleared;
+  if(!currentUser)window.location.reload();
+}
+async function logoutUser() {
+  const ctx=wbSessionContext();
+  await Promise.race([wbUnsubscribeDevice(),new Promise(resolve=>setTimeout(resolve,3000))]);
+  if(!wbSameSession(ctx))return;
+  try{
+    const {error}=await sb.auth.signOut();
+    if(error){if(wbSameSession(ctx))toast('Не удалось завершить выход: '+error.message);return;}
+    // Офлайн-заглушка не присылает SIGNED_OUT: очищаем локальную сессию и без события.
+    if(wbSameSession(ctx))await wbFinishLocalLogout();
+  }catch(e){if(wbSameSession(ctx))toast('Не удалось завершить выход: '+e.message);}
+}
 
 function confirmLogout() {
   const who=currentProfile?.full_name||currentUser?.email||'';
-  confirm2('Выйти из аккаунта', who?`Вы вошли как ${who}. Точно выйти?`:'Точно выйти?', ()=>logoutUser(), 'Выйти');
+  const note=offlineQueue.length?` Неотправленных изменений: ${offlineQueue.length}. Очередь останется только у вашего аккаунта.`:'';
+  confirm2('Выйти из аккаунта', (who?`Вы вошли как ${who}. Точно выйти?`:'Точно выйти?')+note, ()=>logoutUser(), 'Выйти');
 }
 
 function openChangePassword() {
@@ -9635,9 +9875,11 @@ function wbApplyPrefs(obj){
 async function wbPushPrefs(){
   clearTimeout(_prefsTimer); _prefsTimer = null;
   if (!currentUser || _prefsState === 'missing' || !isOnline()) return false;
+  const ctx=wbSessionContext();
   try {
     const snap = wbCollectPrefs();
-    const { error } = await sb.from('user_settings').upsert({ user_id: currentUser.id, settings: snap, updated_at: new Date().toISOString() });
+    const { error } = await sb.from('user_settings').upsert({ user_id: ctx.userId, settings: snap, updated_at: new Date().toISOString() });
+    if(!wbSameSession(ctx))return false;
     if (error) { if (wbPrefsMissing(error)) _prefsState = 'missing'; return false; }
     _prefsLastSent = JSON.stringify(snap);
     localStorage.removeItem(WB_PREFS_DIRTY_KEY);
@@ -9648,10 +9890,12 @@ async function wbPushPrefs(){
 // Вызывается при входе, ДО применения темы/вида (localInit) — см. initApp().
 async function wbPullPrefs(){
   if (!currentUser || !isOnline()) return;
+  const ctx=wbSessionContext();
   try {
     const owner = localStorage.getItem(WB_PREFS_OWNER_KEY);
     const mine = !owner || owner === String(currentUser.id);
-    const { data, error } = await sb.from('user_settings').select('settings').eq('user_id', currentUser.id).maybeSingle();
+    const { data, error } = await sb.from('user_settings').select('settings').eq('user_id', ctx.userId).maybeSingle();
+    if(!wbSameSession(ctx))return;
     if (error) { _prefsState = wbPrefsMissing(error) ? 'missing' : 'idle'; return; }
     _prefsState = 'ok';
     if (mine && localStorage.getItem(WB_PREFS_DIRTY_KEY) === '1') { await wbPushPrefs(); return; }   // свежие правки без сети — важнее
@@ -9690,16 +9934,19 @@ async function loadProfile() {
   // и раньше это исключение обрывало ВЕСЬ запуск приложения — до initApp() дело не
   // доходило, экран оставался пустым. Теперь ошибку гасим и берём профиль из
   // локального кеша, сохранённого при прошлом удачном входе.
+  const ctx=wbSessionContext();if(!ctx.userId)return;
   try{
-    const { data } = await sb.from('profiles').select('*').eq('id', currentUser.id).single();
+    const { data } = await sb.from('profiles').select('*').eq('id', ctx.userId).single();
+    if(!wbSameSession(ctx))return;
     if(data){
       currentProfile = data;
-      try{ localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(data)); }catch(_){}
+      try{ localStorage.setItem(wbDataKey(PROFILE_CACHE_KEY), JSON.stringify(data)); }catch(_){}
       return;
     }
   }catch(e){ console.warn('Профиль не загрузился с сервера, берём локальную копию:', e); }
   try{
-    const cached = localStorage.getItem(PROFILE_CACHE_KEY);
+    if(!wbSameSession(ctx))return;
+    const cached = localStorage.getItem(wbDataKey(PROFILE_CACHE_KEY)) || (wbLegacyDataIsMine()?localStorage.getItem(PROFILE_CACHE_KEY):null);
     if(cached){
       const p = JSON.parse(cached);
       // Только если это профиль ТОГО ЖЕ пользователя — иначе чужие права.
@@ -9735,8 +9982,10 @@ function isHeadRole() { return currentProfile && currentProfile.role === 'user';
 // delegate_id = я). Назначает и снимает доступ только администратор.
 let delegatedFrom=new Set();
 async function loadDelegations(){
+  const ctx=wbSessionContext();
   try{
-    const { data, error } = await sb.from('access_delegations').select('owner_id').eq('delegate_id', currentUser.id);
+    const { data, error } = await sb.from('access_delegations').select('owner_id').eq('delegate_id', ctx.userId);
+    if(!wbSameSession(ctx))return;
     if(!error) delegatedFrom=new Set((data||[]).map(d=>d.owner_id));
   }catch(e){ /* тихо игнорируем — просто не будет доступа к чужим данным */ }
 }
@@ -9781,9 +10030,11 @@ function canEditTask(t){ return isAdmin()||t?.owner_id===currentUser?.id||delega
 // всё равно не даст прочитать чужие профили за пределами организации.
 let allProfiles=[];
 async function loadAllProfiles(){
+  const ctx=wbSessionContext();
   if(!isAdmin()&&!isManagerRole()&&!isHeadRole())return;
   try{
     const { data, error } = await sb.from('profiles').select('id,full_name,email,role');
+    if(!wbSameSession(ctx))return;
     if(!error)allProfiles=data||[];
   }catch(e){ /* тихо игнорируем — просто не покажем имена */ }
 }
@@ -9880,6 +10131,8 @@ function offerToDbFields(o) {
 // перезаписать то, с чем человек уже начал работать.
 let _syncGen = 0;
 async function syncFromSupabase() {
+  const ctx=wbSessionContext();
+  if(!ctx.userId)return;
   const gen = ++_syncGen;
   // ОПТИМИЗАЦИЯ (лёгкая синхронизация): не тянем текст всей истории при старте.
   // Даты нужны для расчётов «дней без контакта», а текст — только у статусных
@@ -9900,7 +10153,7 @@ async function syncFromSupabase() {
   // отказ в правах, сбой на сервере) data === null, и прежний код записывал пустой
   // массив — то есть молча стирал локально видимые данные до следующей удачной
   // синхронизации. Теперь в таком случае оставляем то, что уже загружено.
-  if (gen !== _syncGen) return;
+  if (gen !== _syncGen || !wbSameSession(ctx)) return;
   if(!cRes.error) S.clients = (cRes.data || []).map(r => dbToClient(r, histMap[r.id] || []));
   migrateClientStatuses();
   if(!tRes.error) S.tasks   = (tRes.data || []).map(dbToTask);
@@ -9908,10 +10161,12 @@ async function syncFromSupabase() {
   // Поездки грузим отдельно и мягко: если таблицы trips ещё нет в базе, не роняем всю синхронизацию.
   try {
     const trRes = await sb.from('trips').select('*').is('deleted_at', null).order('id');
-    if (!trRes.error && gen === _syncGen) S.trips = (trRes.data || []).map(dbToTrip);
+    if (!trRes.error && gen === _syncGen && wbSameSession(ctx)) S.trips = (trRes.data || []).map(dbToTrip);
   } catch(e) { /* таблицы trips пока нет — планировщик командировок будет пустым */ }
   // Ссылки и внутренние контакты — мягко: если таблиц ещё нет, остальное не ломаем.
+  if(!wbSameSession(ctx))return;
   await loadLinksData();
+  if(!wbSameSession(ctx))return;
   ci = S.clients.length % COLS.length;
 }
 // Ленивая догрузка полной истории одного клиента (с текстом записей).
@@ -10850,7 +11105,7 @@ async function undo(){
   const prev=undoStack.pop();
   S=JSON.parse(prev);
   _lastSnapshot=prev;
-  idbSet(SK,prev).catch(()=>{});
+  idbSet(wbDataKey(SK),prev).catch(()=>{});
   updateUndoRedoButtons();
   toast('↺ Отменяем и синхронизируем с сервером...');
   await reconcileToSupabase(oldS,S);
@@ -10866,7 +11121,7 @@ async function redo(){
   const next=redoStack.pop();
   S=JSON.parse(next);
   _lastSnapshot=next;
-  idbSet(SK,next).catch(()=>{});
+  idbSet(wbDataKey(SK),next).catch(()=>{});
   updateUndoRedoButtons();
   toast('↻ Повторяем и синхронизируем с сервером...');
   await reconcileToSupabase(oldS,S);
@@ -10877,6 +11132,7 @@ async function redo(){
 // --- INIT APP ---
 const INIT_SYNC_WAIT_MS = window.__WB_INIT_WAIT_MS || 25000;   // __WB_INIT_WAIT_MS — только для автотестов
 async function initApp() {
+  const ctx=wbSessionContext();
   const dl=document.getElementById('data-loading');
   if(dl)dl.style.display='flex';
   try{
@@ -10887,6 +11143,8 @@ async function initApp() {
     // Сначала поднимаем последнее сохранённое состояние — приложение сразу готово
     // к работе (и это единственный источник данных, когда сети нет).
     await loadLocalCache();
+    if(!wbSameSession(ctx))return;
+    window.wbLoadReportCache&&wbLoadReportCache();
     try{
       // Не ждём сервер дольше INIT_SYNC_WAIT_MS: если связь «подвисла», открываем
       // приложение на сохранённых данных, а не держим экран загрузки бесконечно.
@@ -10894,8 +11152,10 @@ async function initApp() {
       const timeout = new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('INIT_SYNC_TIMEOUT')), INIT_SYNC_WAIT_MS); });
       try{
         await Promise.race([(async () => {
-          await wbPullPrefs();         // личные настройки — до localInit(), который их применяет
+          await wbPullPrefs();
+          if(!wbSameSession(ctx))return;         // личные настройки — до localInit(), который их применяет
           await syncFromSupabase();
+          if(!wbSameSession(ctx))return;
           await loadAllProfiles();
           await loadDelegations();
         })(), timeout]);
@@ -10911,6 +11171,7 @@ async function initApp() {
       setTimeout(()=>toast('Нет соединения — работаем с локальными данными'), 800);
       }
     }
+    if(!wbSameSession(ctx))return;
     _lastSnapshot=JSON.stringify(S);
     updateUndoRedoButtons();
     localInit();
@@ -11158,11 +11419,14 @@ function toggleClientFilters(){const p=document.getElementById('page-clients');i
   try{ ({ data: { session } } = await sb.auth.getSession()); }catch(e){ console.warn('Не удалось прочитать сессию:', e); }
   if (session) {
     currentUser = session.user;
+    const ctx=wbSessionContext();
     // Каждый шаг отдельно: сбой одного (обычно из-за отсутствия сети) не должен
     // мешать приложению открыться на локальных данных.
     try{ await loadProfile(); }catch(e){ console.warn('loadProfile:', e); }
+    if(!wbSameSession(ctx))return;
     hideLoginScreen();
     try{ await initApp(); }catch(e){ console.warn('initApp:', e); }
+    if(!wbSameSession(ctx))return;
     appInitialized = true;
   } else {
     showLoginScreen();
@@ -11179,30 +11443,30 @@ function toggleClientFilters(){const p=document.getElementById('page-clients');i
       // этой проверки экран загрузки выскакивал бы заново на каждое такое обновление,
       // хотя пользователь уже вошёл и все данные уже загружены.
       const sameUser = appInitialized && currentUser && session?.user?.id === currentUser.id;
+      if(!sameUser && currentUser)wbResetSessionState();
       currentUser = session.user;
       if (sameUser) return;
+      const ctx=wbSessionContext();
       await loadProfile();
+      if(!wbSameSession(ctx))return;
       hideLoginScreen();
       await initApp();
-      appInitialized = true;
+      if(wbSameSession(ctx))appInitialized = true;
     } else if (event === 'PASSWORD_RECOVERY') {
+      if(currentUser && currentUser.id!==session?.user?.id)wbResetSessionState();
       currentUser = session.user;
+      const ctx=wbSessionContext();
       await loadProfile();
+      if(!wbSameSession(ctx))return;
       hideLoginScreen();
       await initApp();
+      if(!wbSameSession(ctx))return;
       appInitialized = true;
       openChangePassword();
       toast('Задайте новый пароль');
     } else if (event === 'SIGNED_OUT') {
-      currentUser = null; currentProfile = null;
-      appInitialized = false;
-      // Останавливаем всё периодическое — иначе продолжали бы тикать и после выхода
-      // из аккаунта (лишний расход батареи, особенно на телефоне в установленном PWA).
-      stopNotificationPolling();
-      stopAutoSave();
-      if(_lockTimer){ clearInterval(_lockTimer); _lockTimer=null; }
-      stopRealtime();
-      showLoginScreen();
+      // Полная перезагрузка удаляет старые карточки/формы из DOM и все замыкания.
+      if(currentUser)await wbFinishLocalLogout();
     }
   }
 })();
