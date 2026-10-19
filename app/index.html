@@ -2143,7 +2143,7 @@ button,a,select,label{touch-action:manipulation}
       <select class="sel-in" id="trip-region" aria-label="Фильтр командировок по региону" onchange="onTripRegionChange()" style="font-size:13px"><option value="">Все регионы</option></select>
       <select class="sel-in" id="trip-city" aria-label="Фильтр командировок по городу" onchange="renderTrips()" style="font-size:13px"><option value="">Все города</option></select>
       <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;color:var(--t2)"><input type="checkbox" id="trip-hide-inactive" onchange="renderTrips()" checked> Скрыть «Не работаем»</label>
-      <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;color:var(--t2)"><input type="checkbox" id="trip-due-only" onchange="renderTrips()"> Только «пора посетить»</label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;color:var(--t2)"><input type="checkbox" id="trip-due-only" onchange="renderTrips()"> <span id="trip-due-caption">Только «пора посетить»</span></label>
     </div>
     <div class="page-scroll"><div id="planned-trips" style="margin-bottom:8px"></div><div id="trips-wrap" style="display:flex;flex-direction:column;gap:16px;padding-bottom:20px"></div></div>
   </div>
@@ -3256,12 +3256,12 @@ function today(){
   const d=new Date();
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 }
-const TODAY=today();
+let TODAY=today(); // обновляется без перезагрузки при смене локального дня
 // Метка версии файла — дата + порядковый номер сборки (увеличивается на 1 в каждой
 // новой присланной версии). Показывается в Профиле, чтобы можно было сверить «то, что
 // открыто на телефоне» с «тем, что прислали только что» — без гадания, обновился
 // ли сайт после деплоя на хостинг.
-const APP_BUILD='ver 29.2.1 · исправления безопасности и импорта';
+const APP_BUILD='ver 29.2.3 · персональные напоминания о визитах';
 // Преобразует Date обратно в строку 'YYYY-MM-DD' по ЛОКАЛЬНЫМ компонентам (не UTC) — пара к today().
 function dateToLocalStr(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 // Парсит строку 'YYYY-MM-DD' как ЛОКАЛЬНУЮ дату (полночь по местному времени), а не UTC.
@@ -3730,9 +3730,9 @@ function closeModal(id){
   const ov=document.getElementById(id);
   if(!ov)return;
   // Плавное закрытие — зеркально открытию (см. .overlay.closing)
-  if(!ov.classList.contains('open')||ov.classList.contains('closing')||lbReduced()){ov.classList.remove('open','closing');return;}
+  if(!ov.classList.contains('open')||ov.classList.contains('closing')||lbReduced()){ov.classList.remove('open','closing');setTimeout(wbLiveUiTick,0);return;}
   ov.classList.add('closing');
-  setTimeout(()=>ov.classList.remove('open','closing'),170);
+  setTimeout(()=>{ov.classList.remove('open','closing');wbLiveUiTick();},170);
 }
 // Закрытие по клику на фон — только для диалога подтверждения (не для форм с данными)
 document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{
@@ -3851,9 +3851,11 @@ document.addEventListener('click',e=>{
   if(!e.target.closest('.gsearch-wrap')){document.getElementById('gsr')?.classList.remove('open');document.getElementById('gsr-mobile')?.classList.remove('open');}
 });
 
+let wbDataRevision=0; // локальные/живые изменения после начала фонового чтения
 let _saveFailWarned=false;
 function save(){
   if(!currentUser)return;
+  wbDataRevision++;
   try{
     const json=JSON.stringify(S);
     // Перед перезаписью — если состояние реально изменилось, кладём ПРЕДЫДУЩИЙ снимок
@@ -4917,11 +4919,11 @@ function mkNoStepWidget(noStep){
     </div>`;
 }
 // Виджет просроченных повторных визитов на дашборде.
-// Переиспользует ту же логику tripIsDue, что и «Карта региона»: показывает, сколько
+// Переиспользует персональную выборку карты региона: показывает, сколько
 // объектов уже пора объехать, и по клику открывает карту с включённым фильтром.
 function renderDueVisits(){
   const el=document.getElementById('dash-due'); if(!el)return;
-  const due=(S.clients||[]).filter(tripIsDue);
+  const due=(S.clients||[]).filter(wbVisitReminderIsDue);
   let html='';
   if(due.length){
     // Компактная подпись: топ регионов с просроченными визитами.
@@ -5464,7 +5466,7 @@ const SEG_ICONS={
 };
 const CLIENT_SEGMENTS=[
   {key:'all',     label:'Все',           pred:()=>true},
-  {key:'due',     label:'Пора посетить', pred:c=>tripIsDue(c)},
+  {key:'due',     label:'Пора посетить', pred:c=>wbVisitReminderIsDue(c)},
   {key:'nostep',  label:'Без шага',      pred:c=>PIPELINE.includes(c.status)&&!hasNextStep(c)},
   {key:'stuck',   label:'Застрявшие',    pred:c=>isStuck(c)},
   {key:'cooling', label:'Остывшие 60+',  pred:c=>PIPELINE.includes(c.status)&&(daysSinceTouch(c)??-1)>=60},
@@ -6465,6 +6467,15 @@ function tripIsDue(c){
   // «Пора посетить» — если задана дата следующего визита и она сегодня или в прошлом.
   return !!(c.nextVisitDate && c.nextVisitDate<=TODAY);
 }
+// Общий просмотр карточки не означает, что сотрудник отвечает за её визит.
+// Делегирование даёт доступ к клиенту, но не переносит персональное напоминание.
+function wbCanReceiveVisitReminder(c){
+  if(!c || !currentUser?.id || !currentProfile)return false;
+  if(isAdmin())return adminOwnerVisible(c.owner_id);
+  if(isHeadRole())return true; // прежний обзор клиентов подразделения
+  return !!(isManagerRole() && c.owner_id===currentUser.id);
+}
+function wbVisitReminderIsDue(c){return wbCanReceiveVisitReminder(c) && tripIsDue(c);}
 // Сводка по статусам набора объектов: цветные точки с числами (действующих/переговоров/…).
 // Порядок как в STATUS_META, показываем только ненулевые статусы.
 function tripStatusSummary(items){
@@ -6513,17 +6524,14 @@ function renderTrips(){
   const city=document.getElementById('trip-city').value;
   const hideInactive=document.getElementById('trip-hide-inactive').checked;
   const dueOnly=document.getElementById('trip-due-only').checked;
+  const dueCaption=document.getElementById('trip-due-caption');
+  if(dueCaption)dueCaption.textContent=isManagerRole()?'Только мои «пора посетить»':'Только «пора посетить»';
 
   let list=S.clients.slice();
   if(region)list=list.filter(c=>c.region===region);
   if(city)list=list.filter(c=>c.city===city);
   if(hideInactive)list=list.filter(c=>c.status!=='inactive');
-  if(dueOnly)list=list.filter(tripIsDue);
-
-  if(!list.length){
-    wrap.innerHTML='<div class="empty" style="padding:40px 16px;text-align:center;color:var(--t2)">Нет объектов по заданным фильтрам.<br>Заполните регион и город в карточках клиентов, чтобы они появились здесь.</div>';
-    return;
-  }
+  if(dueOnly)list=list.filter(wbVisitReminderIsDue);
 
   // Двухуровневая группировка: регион -> город -> объекты.
   const byRegion={};
@@ -6533,7 +6541,7 @@ function renderTrips(){
     ((byRegion[rk]||={})[ck]||=[]).push(c);
   });
   const sortFn=(a,b)=>{
-    const da=tripIsDue(a)?0:1, db=tripIsDue(b)?0:1;
+    const da=wbVisitReminderIsDue(a)?0:1, db=wbVisitReminderIsDue(b)?0:1;
     if(da!==db)return da-db;
     const sa=TRIP_STATUS_ORDER[a.status]??3, sob=TRIP_STATUS_ORDER[b.status]??3;
     if(sa!==sob)return sa-sob;
@@ -6541,9 +6549,9 @@ function renderTrips(){
   };
   const regionKeys=Object.keys(byRegion).sort((a,b)=>a.localeCompare(b,'ru'));
 
-  // Виджет "пора посетить": сколько всего просроченных повторных визитов (по ВСЕЙ базе,
-  // не только по текущему фильтру) — чтобы planировать поездку с самого нужного.
-  const allDue=S.clients.filter(tripIsDue);
+  // Виджет: визиты в зоне ответственности текущего пользователя, независимо
+  // от выбранного региона/города. Общую карту и статистику не ограничиваем.
+  const allDue=S.clients.filter(wbVisitReminderIsDue);
   let dueWidget='';
   if(allDue.length){
     const active=dueOnly?' active':'';
@@ -6551,22 +6559,27 @@ function renderTrips(){
       <span style="font-size:20px">🔔</span>
       <div style="flex:1;min-width:0">
         <div style="font-weight:600">${allDue.length} ${pluralRu(allDue.length,'объект','объекта','объектов')} пора посетить</div>
-        <div style="font-size:12px;color:var(--t2)">${dueOnly?'Показаны только они · нажмите, чтобы снять фильтр':'Нажмите, чтобы показать только их'}</div>
+        <div style="font-size:12px;color:var(--t2)">${isManagerRole()?'Только ваши клиенты · ':''}${dueOnly?'Показаны только они · нажмите, чтобы снять фильтр':'Нажмите, чтобы показать только их'}</div>
       </div>
       <span class="trip-due-toggle">${dueOnly?'✓':'›'}</span>
     </div>`;
   }
 
+  if(!list.length){
+    const hint=dueOnly&&isManagerRole()?'Нет ваших объектов, которые пора посетить, по заданным фильтрам.':'Нет объектов по заданным фильтрам.';
+    wrap.innerHTML=dueWidget+'<div class="empty" style="padding:40px 16px;text-align:center;color:var(--t2)">'+hint+'</div>';
+    return;
+  }
   wrap.innerHTML=dueWidget+regionKeys.map(rk=>{
     const cities=byRegion[rk];
     const cityKeys=Object.keys(cities).sort((a,b)=>a.localeCompare(b,'ru'));
     const regionItems=cityKeys.reduce((n,ck)=>n+cities[ck].length,0);
-    const regionDue=cityKeys.reduce((n,ck)=>n+cities[ck].filter(tripIsDue).length,0);
+    const regionDue=cityKeys.reduce((n,ck)=>n+cities[ck].filter(wbVisitReminderIsDue).length,0);
     // Если задан фильтр по региону/городу — раскрываем автоматически, иначе берём сохранённое состояние (по умолчанию свёрнуто).
     const rOpen=!!region||!!city||tripOpen.regions.has(rk);
     const citiesHtml=cityKeys.map(ck=>{
       const items=cities[ck].sort(sortFn);
-      const dueCount=items.filter(tripIsDue).length;
+      const dueCount=items.filter(wbVisitReminderIsDue).length;
       const cityId=rk+'||'+ck;
       const cOpen=!!city||tripOpen.cities.has(cityId);
       const body=tripView==='card'
@@ -7020,7 +7033,7 @@ async function saveVisitResult(){
 // Карточка объекта для карточного вида карты региона.
 function mkTripCard(c){
   const sm=STATUS_META[c.status||'unknown']||STATUS_META.unknown;
-  const due=tripIsDue(c);
+  const due=wbVisitReminderIsDue(c);
   const contact=(c.contacts&&c.contacts[0])||{};
   const phone=contact.phone||c.phone||'';
   const cat=c.objectCategory?`<span class="trip-cat">${esc(c.objectCategory)}</span>`:'';
@@ -7040,7 +7053,7 @@ function mkTripCard(c){
 }
 function mkTripRow(c){
   const sm=STATUS_META[c.status||'unknown']||STATUS_META.unknown;
-  const due=tripIsDue(c);
+  const due=wbVisitReminderIsDue(c);
   const contact=(c.contacts&&c.contacts[0])||{};
   const phone=contact.phone||c.phone||'';
   const cat=c.objectCategory?`<span class="trip-cat">${esc(c.objectCategory)}</span>`:'';
@@ -7540,14 +7553,14 @@ let LK_TABLES_OK=null;   // есть ли таблицы в базе
 function dbToLink(r){ return {id:r.id, description:r.description||'', url:r.url||'', sort:r.sort||0}; }
 function dbToStaff(r){ return {id:r.id, fullName:r.full_name||'', category:r.category||'', email:r.email||'', phone:r.phone||'', duties:r.duties||'', sort:r.sort||0}; }
 
-async function loadLinksData(){
+async function loadLinksData(stillCurrent=null){
   const ctx=wbSessionContext();
   try{
     const [lRes,sRes]=await Promise.all([
       sb.from('links').select('*').is('deleted_at',null).order('sort').order('id'),
       sb.from('staff_contacts').select('*').is('deleted_at',null).order('sort').order('id'),
     ]);
-    if(!wbSameSession(ctx))return;
+    if(!wbSameSession(ctx) || (stillCurrent && !stillCurrent()))return;
     if(lRes.error||sRes.error){ LK_TABLES_OK=false; return; }
     S.links=(lRes.data||[]).map(dbToLink);
     S.staff=(sRes.data||[]).map(dbToStaff);
@@ -7670,6 +7683,7 @@ const LK_FIELD={description:'description',url:'url',fullName:'full_name',categor
 let lkPending=new Map();     // "table:id" -> {table,id,values}
 let lkTimer=null;
 function queueEdit(table,id,field,value){
+  wbDataRevision++;
   const key=table+':'+id;
   const cur=lkPending.get(key)||{table,id,values:{}};
   cur.values[LK_FIELD[field]]=value;
@@ -8969,8 +8983,83 @@ function initAutoGrowNotes(){
   });
 }
 
+// Живые часы интерфейса: TODAY не должен оставаться днём запуска приложения.
+// Обновление не перезагружает страницу и не меняет значения открытых форм.
+let wbDayTimer=null, wbDayPoll=null, wbViewRefreshPending=false;
+let wbRemoteResyncNeeded=false, wbLastWakeSync=0;
+function wbUiIsEditing(){
+  const el=document.activeElement;
+  return !!document.querySelector('.overlay.open') || !!(el && (el.matches('input,textarea,select') || el.isContentEditable))
+    || _savingClient || _savingTask || _savingOffer || wbImportBusy || visitOpPending>0 || lkPending.size>0 || dashDragId!==null;
+}
+function wbRefreshLocalDay(){
+  const now=new Date(), next=dateToLocalStr(now), previous=TODAY;
+  const label=document.getElementById('today-lbl');
+  if(label)label.textContent=now.toLocaleDateString('ru-RU',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  if(next===previous)return false;
+  TODAY=next;
+  // Следуем за новым месяцем только если календарь показывал текущий месяц.
+  // Выбранный вручную исторический месяц не сбрасываем.
+  const old=parseLocalDate(previous);
+  if(calYear===old.getFullYear() && calMonth===old.getMonth()){
+    calYear=now.getFullYear();calMonth=now.getMonth();
+  }
+  wbViewRefreshPending=true;
+  if(currentUser)updateTaskBadge();
+  return true;
+}
+function wbTryRefreshView(){
+  if(!wbViewRefreshPending || !currentUser || document.visibilityState==='hidden' || wbUiIsEditing())return false;
+  const page=document.querySelector('.page.active');
+  const scrolls=page?[page,...page.querySelectorAll('[id]')].filter(el=>el.id&&(el.scrollTop||el.scrollLeft)).map(el=>[el.id,el.scrollTop,el.scrollLeft]):[];
+  const render={dashboard:renderDash,clients:renderClients,tasks:renderTaskPage,offers:renderOffers,trips:renderTrips,calendar:renderCalendar,analytics:renderAnalytics,stats:renderStats,links:renderLinksPage}[currentPageId()];
+  if(render)render(); // без showPage: не сбрасываем выбранную вкладку, фильтры и пагинацию
+  updateTaskBadge();wbViewRefreshPending=false;
+  scrolls.forEach(([id,top,left])=>{const el=document.getElementById(id);if(el){el.scrollTop=top;el.scrollLeft=left;}});
+  return true;
+}
+function wbRequestViewRefresh(){wbViewRefreshPending=true;wbTryRefreshView();}
+function wbLiveUiTick(){
+  if(!currentUser || document.visibilityState==='hidden')return;
+  wbRefreshLocalDay();wbTryRefreshView();
+  if(wbRemoteResyncNeeded)rtFullResync();
+}
+function wbScheduleMidnight(){
+  clearTimeout(wbDayTimer);
+  const now=new Date(), midnight=new Date(now.getFullYear(),now.getMonth(),now.getDate()+1,0,0,0,100);
+  wbDayTimer=setTimeout(()=>{wbDayTimer=null;if(!currentUser)return;wbRefreshLocalDay();wbTryRefreshView();wbScheduleMidnight();},Math.max(100,midnight-now));
+}
+function wbStopLiveUi(){
+  clearTimeout(wbDayTimer);clearInterval(wbDayPoll);wbDayTimer=wbDayPoll=null;
+  wbViewRefreshPending=false;wbRemoteResyncNeeded=false;wbLastWakeSync=0;
+}
+function wbStartLiveUi(){
+  wbStopLiveUi();wbRefreshLocalDay();wbTryRefreshView();wbScheduleMidnight();
+  // Страховка от перевода часов/часового пояса и ограничений фоновых таймеров.
+  wbDayPoll=setInterval(wbLiveUiTick,30000);
+}
+function wbWakeRefresh(force=false){
+  if(!currentUser || document.visibilityState==='hidden')return;
+  const changed=wbRefreshLocalDay();wbTryRefreshView();wbScheduleMidnight();
+  if(!isOnline())return;
+  const now=Date.now();
+  if(force || changed || !wbLastWakeSync || now-wbLastWakeSync>=15000){
+    wbLastWakeSync=now;
+    if(_rtStatus!=='live')initRealtime();
+    rtFullResync();
+  }
+}
+window.addEventListener('focus',()=>wbWakeRefresh());
+window.addEventListener('pageshow',()=>wbWakeRefresh());
+document.addEventListener('focusout',()=>setTimeout(wbLiveUiTick,100));
+// Захватываем новую дату ДО обработчика действия (например, открытия задачи).
+// Перерисовка — после действия: не удаляем элемент, по которому нажали.
+['click','keydown'].forEach(type=>document.addEventListener(type,()=>{
+  if(!currentUser)return;wbRefreshLocalDay();setTimeout(wbLiveUiTick,0);
+},true));
+
 function localInit(){
-  document.getElementById('today-lbl').textContent = new Date().toLocaleDateString('ru-RU', {weekday:'long', day:'numeric', month:'long', year:'numeric'});
+  wbStartLiveUi();
   loadTheme();
   loadRailPin();
   loadNavLayout();
@@ -9190,6 +9279,7 @@ function enqueueOp(d){
 //   opts.tmpId — заранее выданный временный id (для оптимистичного создания)
 async function dbWrite(d, opts={}){
   if(!currentUser)return {data:null,error:{message:'Сначала войдите в CRM'},queued:false};
+  wbDataRevision++;
   const ctx=wbSessionContext();if(_queueOwner!==ctx.userId)loadOfflineQueue();
   d=JSON.parse(JSON.stringify(d)); // защищаемся от мутаций снаружи
   d.author_id=ctx.userId;
@@ -9312,7 +9402,7 @@ function wbEmptyState(){return {clients:[],tasks:[],offers:[],trips:[],links:[],
 function wbResetSessionState(){
   const uid=currentUser?.id;const cacheKey=uid?wbDataKey(SK,uid):null;
   wbSessionGeneration++;_syncGen++;wbFlushToken++;
-  stopNotificationPolling();stopAutoSave();stopRealtime();
+  wbStopLiveUi();stopNotificationPolling();stopAutoSave();stopRealtime();
   if(_lockTimer){clearInterval(_lockTimer);_lockTimer=null;}
   clearTimeout(lkTimer);lkPending.clear();clearTimeout(_prefsTimer);_prefsTimer=null;
   S=wbEmptyState();undoStack=[];redoStack=[];_lastSnapshot=null;
@@ -10130,10 +10220,17 @@ function offerToDbFields(o) {
 // открыл приложение на сохранённых данных, запоздавший ответ не должен молча
 // перезаписать то, с чем человек уже начал работать.
 let _syncGen = 0;
-async function syncFromSupabase() {
+async function syncFromSupabase(options={}) {
   const ctx=wbSessionContext();
   if(!ctx.userId)return;
-  const gen = ++_syncGen;
+  const gen = ++_syncGen, revision=wbDataRevision;
+  const stillCurrent=()=>{
+    if(gen!==_syncGen || !wbSameSession(ctx))return false;
+    if(options.background && (revision!==wbDataRevision || offlineQueue.length || flushing || _savingClient || _savingTask || _savingOffer || wbImportBusy || visitOpPending>0 || lkPending.size)){
+      wbRemoteResyncNeeded=true;return false;
+    }
+    return true;
+  };
   // ОПТИМИЗАЦИЯ (лёгкая синхронизация): не тянем текст всей истории при старте.
   // Даты нужны для расчётов «дней без контакта», а текст — только у статусных
   // записей («🔄 Статус: …»), по которым считаются daysInStatus/isStuck.
@@ -10149,25 +10246,21 @@ async function syncFromSupabase() {
   (hsRes.data || []).forEach(h => { statusText[h.id] = h.text; });
   const histMap = {};
   (hRes.data || []).forEach(h => { (histMap[h.client_id] ||= []).push({ id: h.id, date: h.date, text: statusText[h.id] }); });
-  // Присваиваем ТОЛЬКО если сервер реально ответил без ошибки. Иначе (нет сети,
-  // отказ в правах, сбой на сервере) data === null, и прежний код записывал пустой
-  // массив — то есть молча стирал локально видимые данные до следующей удачной
-  // синхронизации. Теперь в таком случае оставляем то, что уже загружено.
-  if (gen !== _syncGen || !wbSameSession(ctx)) return;
-  if(!cRes.error) S.clients = (cRes.data || []).map(r => dbToClient(r, histMap[r.id] || []));
+  // Сначала завершаем чтение, затем применяем снимок. Локальная правка,
+  // появившаяся во время запроса, делает фоновый снимок устаревшим.
+  let trRes=null;
+  try{trRes=await sb.from('trips').select('*').is('deleted_at',null).order('id');}catch(_){}
+  if(!stillCurrent())return false;
+  // При ошибке конкретной таблицы оставляем её предыдущие данные, не пустой массив.
+  if(!cRes.error)S.clients=(cRes.data||[]).map(r=>dbToClient(r,histMap[r.id]||[]));
   migrateClientStatuses();
-  if(!tRes.error) S.tasks   = (tRes.data || []).map(dbToTask);
-  if(!oRes.error) S.offers  = (oRes.data || []).map(dbToOffer);
-  // Поездки грузим отдельно и мягко: если таблицы trips ещё нет в базе, не роняем всю синхронизацию.
-  try {
-    const trRes = await sb.from('trips').select('*').is('deleted_at', null).order('id');
-    if (!trRes.error && gen === _syncGen && wbSameSession(ctx)) S.trips = (trRes.data || []).map(dbToTrip);
-  } catch(e) { /* таблицы trips пока нет — планировщик командировок будет пустым */ }
-  // Ссылки и внутренние контакты — мягко: если таблиц ещё нет, остальное не ломаем.
-  if(!wbSameSession(ctx))return;
-  await loadLinksData();
-  if(!wbSameSession(ctx))return;
-  ci = S.clients.length % COLS.length;
+  if(!tRes.error)S.tasks=(tRes.data||[]).map(dbToTask);
+  if(!oRes.error)S.offers=(oRes.data||[]).map(dbToOffer);
+  if(trRes && !trRes.error)S.trips=(trRes.data||[]).map(dbToTrip);
+  await loadLinksData(stillCurrent);
+  if(!stillCurrent())return false;
+  ci=S.clients.length%COLS.length;
+  return true;
 }
 // Ленивая догрузка полной истории одного клиента (с текстом записей).
 // Вызывается при открытии карточки клиента или окна «История».
@@ -10229,55 +10322,52 @@ function applyRealtimeChange(table, payload){
 // Перерисовываем только данные текущей страницы — без showPage(), который
 // дополнительно дёргает навигацию и сбрасывает состояние интерфейса.
 function rtRender(table){
-  const p = currentPageId();
-  if (table === 'clients') {
-    if (p === 'clients') renderClients();
-    else if (p === 'dashboard') renderDash();
-    else if (p === 'stats') renderStats();
-  } else if (table === 'tasks') {
-    if (p === 'tasks') renderTaskPage();
-    else if (p === 'dashboard') renderDash();
-    else if (p === 'calendar') renderCalendar();
-    updateTaskBadge();
-  } else if (table === 'offers') {
-    if (p === 'offers') renderOffers();
-    else if (p === 'dashboard') renderDash();
-  } else if (table === 'trips') {
-    if (p === 'trips') renderTrips();
-    else if (p === 'calendar') renderCalendar();
-  }
+  // Любая связанная сущность влияет и на общую аналитику/статистику.
+  wbRequestViewRefresh();
 }
 // Полная «догоняющая» синхронизация: если payload неполный, после обрыва связи,
 // после сна компьютера и т.п. Схлопывает шквал вызовов в один (не чаще раза в 2 с).
 // Не запускается, пока в офлайн-очереди есть неотправленные изменения — иначе
 // данные с сервера перетёрли бы ещё не отправленные локальные правки.
-let _rtResyncTimer = null;
+let _rtResyncTimer = null, _rtResyncRun = null;
 function rtFullResync(){
-  if (_rtResyncTimer || !currentUser) return;
-  _rtResyncTimer = setTimeout(async () => {
-    _rtResyncTimer = null;
-    if (!isOnline() || offlineQueue.length || flushing) return;
-    try {
-      await syncFromSupabase();
+  if(!currentUser)return;
+  wbRemoteResyncNeeded=true;
+  if(_rtResyncTimer || _rtResyncRun)return;
+  const ctx=wbSessionContext();
+  _rtResyncTimer=setTimeout(async()=>{
+    _rtResyncTimer=null;
+    if(!wbSameSession(ctx))return;
+    if(document.visibilityState==='hidden' || !isOnline() || offlineQueue.length || flushing || wbUiIsEditing())return;
+    const run={};_rtResyncRun=run;wbRemoteResyncNeeded=false;
+    try{
+      const synced=await syncFromSupabase({background:true});
+      if(synced===false || !wbSameSession(ctx) || run!==_rtResyncRun)return;
       await loadDelegations();
+      if(!wbSameSession(ctx) || run!==_rtResyncRun)return;
       await loadAllProfiles();
-      if (window.repLoadRemote) repLoadRemote();
-      rtAfterRemoteChange();
-      renderAll();
-      updateTaskBadge();
-    } catch(e) {}
-  }, 2000);
+      if(!wbSameSession(ctx) || run!==_rtResyncRun)return;
+      if(window.repLoadRemote)await repLoadRemote();
+      if(!wbSameSession(ctx) || run!==_rtResyncRun)return;
+      rtAfterRemoteChange();wbRequestViewRefresh();
+    }catch(e){if(wbSameSession(ctx))wbRemoteResyncNeeded=true;}
+    finally{if(_rtResyncRun===run)_rtResyncRun=null;}
+  },2000);
 }
 // Изменение пришло от другого пользователя/устройства — это не действие этого
 // человека, поэтому не кладём его в стек «Отменить» и обновляем офлайн-кеш.
 let _rtPersistTimer = null;
 function rtAfterRemoteChange(){
+  wbDataRevision++;
   try { _lastSnapshot = JSON.stringify(S); } catch(e) {}
   clearTimeout(_rtPersistTimer);
   _rtPersistTimer = setTimeout(() => { try { persistLocalCache(); } catch(e) {} }, 1500);
 }
 function onRtChange(table){
+  const ctx=wbSessionContext();
   return payload => {
+    if(!wbSameSession(ctx))return;
+    if(offlineQueue.length || flushing || _savingClient || _savingTask || _savingOffer || wbImportBusy || visitOpPending>0){rtFullResync();return;}
     if (applyRealtimeChange(table, payload)) { rtAfterRemoteChange(); rtRender(table); }
     else rtFullResync();
   };
@@ -10293,7 +10383,7 @@ function onRtChange(table){
 //   нарастающей паузой; пока связи нет — опрос сервера раз в 30 секунд.
 // • После переподключения/возврата сети/разворачивания окна — догоняющая
 //   синхронизация, чтобы не потерять изменения, сделанные за время обрыва.
-// • Страховка: раз в 5 минут лёгкая пересинхронизация, если окно на экране.
+// • Страховка: раз в минуту пересинхронизация, если окно видно и нет редактирования.
 // ============================================================
 let _rtChannel = null;
 let _rtExtraChannel = null;
@@ -10338,6 +10428,8 @@ function stopRealtime(){
   if (_rtRetryTimer) { clearTimeout(_rtRetryTimer); _rtRetryTimer = null; }
   if (_rtSafetyTimer) { clearInterval(_rtSafetyTimer); _rtSafetyTimer = null; }
   rtStopPoll();
+  clearTimeout(_rtResyncTimer);_rtResyncTimer=null;_rtResyncRun=null;
+  clearTimeout(_rtPersistTimer);_rtPersistTimer=null;wbRemoteResyncNeeded=false;
   _rtStatus = 'off'; _rtWasLive = false; _rtRetryDelay = 2000;
   updateRtIndicator();
 }
@@ -10391,7 +10483,7 @@ function initRealtime() {
         }
       }
       if (histClientId) renderHistList();
-      if (currentPageId() === 'clients') renderClients();
+      if (currentPageId() === 'clients') wbRequestViewRefresh();
     })
     .subscribe((status, err) => {
       if (ch !== _rtChannel) return; // событие от уже закрытого нами канала
@@ -10413,7 +10505,7 @@ function initRealtime() {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'trips' }, onRtChange('trips'))
     .on('postgres_changes', { event: '*', schema: 'public', table: 'access_delegations' }, () => rtFullResync())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, async () => {
-      await loadAllProfiles(); renderAll();
+      const ctx=wbSessionContext();await loadAllProfiles();if(wbSameSession(ctx))wbRequestViewRefresh();
     })
     .subscribe((status, err) => {
       if (ex !== _rtExtraChannel) return;
@@ -10434,21 +10526,14 @@ function initRealtime() {
 
   if (!_rtSafetyTimer) _rtSafetyTimer = setInterval(() => {
     if (document.visibilityState !== 'hidden') rtFullResync();
-  }, 5 * 60 * 1000);
+  }, 60 * 1000);
 }
 
-// Возврат сети и разворачивание окна после долгого перерыва (сон компьютера,
-// свёрнутая вкладка на телефоне) — сразу подтягиваем всё, что изменилось.
-window.addEventListener('online', () => {
-  if (!currentUser) return;
-  if (_rtStatus !== 'live') initRealtime(); else rtFullResync();
-});
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') { _rtHiddenAt = Date.now(); return; }
-  if (currentUser && _rtHiddenAt && Date.now() - _rtHiddenAt > 60000) {
-    if (_rtStatus !== 'live') initRealtime(); else rtFullResync();
-  }
-  _rtHiddenAt = 0;
+// Возврат после сна/сети: дата обновляется сразу даже без интернета.
+window.addEventListener('online',()=>wbWakeRefresh(true));
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='hidden'){_rtHiddenAt=Date.now();return;}
+  wbWakeRefresh();_rtHiddenAt=0;
 });
 
 // --- SOFT LOCK ---
@@ -11165,7 +11250,7 @@ async function initApp() {
       if (syncErr && syncErr.message === 'INIT_SYNC_TIMEOUT') {
         _syncGen++;   // запоздавший ответ сервера не перезапишет открытые данные
         console.warn('Сервер не ответил за ' + INIT_SYNC_WAIT_MS / 1000 + ' с — открываем сохранённые данные');
-        setTimeout(()=>toast('Сервер долго не отвечает — показаны сохранённые данные. Проверьте интернет и нажмите F5'), 800);
+        setTimeout(()=>toast('Сервер долго не отвечает — показаны сохранённые данные. Проверьте интернет — CRM повторит обновление автоматически'), 800);
       } else {
       console.warn('Синхронизация при запуске не удалась — работаем офлайн:', syncErr);
       setTimeout(()=>toast('Нет соединения — работаем с локальными данными'), 800);
