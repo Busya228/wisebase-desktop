@@ -1,20 +1,7 @@
 name: Release desktop app
 
-# Полностью автоматический выпуск обновлений.
-#
-# Запускается при ЛЮБОМ обычном `git push` в main, если изменилось само
-# приложение (app/, main.js, package.json, build/). Ни версию, ни теги вручную
-# поднимать не нужно:
-#   • номер версии: ровно тот, что в package.json ("version"), если такой ещё
-#     больше всех существующих релизов; иначе следующий patch старшего релиза;
-#   • сначала прогоняются автотесты (test/run-all.js) — если хоть один упал,
-#     сборки нет и пользователи ничего не получат;
-#   • Windows и macOS собираются параллельно и заливаются в черновик релиза;
-#   • когда ВСЕ файлы залиты, черновик публикуется автоматически — только
-#     после этого установленные приложения видят обновление (никто не получит
-#     «полурелиз» без файлов).
-# Хотите сменить «большую» версию (например на 30.0) — поменяйте "version" в
-# package.json на 30.0.0, дальше счёт пойдёт как 30.0.N.
+# Builders do not publish to GitHub. Only the final job may publish after
+# local checksums and the actual uploaded asset list have both been verified.
 on:
   push:
     branches: [main]
@@ -45,17 +32,18 @@ jobs:
       version: ${{ steps.v.outputs.version }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - id: v
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Ошибка запроса GitHub прерывает выпуск, а не маскируется как отсутствие версии.
           gh release list --repo "${{ github.repository }}" --limit 1000 --json tagName > "$RUNNER_TEMP/releases.json"
           V=$(node scripts/next-release-version.js "$RUNNER_TEMP/releases.json")
-          echo "Версия релиза: $V"
+          echo "Version: $V"
           echo "version=$V" >> "$GITHUB_OUTPUT"
 
-  # Автотесты — тот же набор, что и `node test/run-all.js` локально.
   test:
     runs-on: ubuntu-latest
     steps:
@@ -63,14 +51,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Установить Playwright
+      - name: Install tests
         working-directory: test
         run: |
           npm ci
           npx playwright install --with-deps chromium
-      - name: Прогнать тесты
+      - name: Run tests
         run: node test/run-all.js
-      - name: Логи тестов (при ошибке)
+      - name: Test logs
         if: failure()
         uses: actions/upload-artifact@v4
         with:
@@ -80,12 +68,15 @@ jobs:
   build:
     needs: [version, test]
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: windows-latest
-            script: release:win
+            script: dist:win
+            platform: win
           - os: macos-latest
-            script: release:mac
+            script: dist:mac
+            platform: mac
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -94,17 +85,58 @@ jobs:
           node-version: 22
       - run: npm ci
       - run: npm version ${{ needs.version.outputs.version }} --no-git-tag-version --allow-same-version
-      - run: npm run ${{ matrix.script }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build locally (no release uploads)
+        run: npm run ${{ matrix.script }} -- --publish never
+      - name: Verify platform files and updater checksums
+        run: node scripts/verify-release-files.js dist ${{ needs.version.outputs.version }} ${{ matrix.platform }}
+      - name: Transfer verified build files
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.platform }}
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            dist/*.exe
+            dist/*.zip
+            dist/*.blockmap
+            dist/*.yml
 
   publish:
     needs: [version, build]
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      VERSION: ${{ needs.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
-      # Описание релиза («Что нового») берётся из RELEASE_NOTES.md — его же
-      # пользователи видят в окне «Доступна новая версия приложения».
-      - run: gh release edit "v${{ needs.version.outputs.version }}" --repo "${{ github.repository }}" --notes-file RELEASE_NOTES.md --draft=false --latest
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-*
+          merge-multiple: true
+          path: release-files
+      - name: Verify complete Windows and macOS release
+        run: node scripts/verify-release-files.js release-files "$VERSION" all release-inventory.json
+      - name: Create draft and upload verified files (single publisher)
+        shell: bash
+        run: |
+          gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft --title "WiseBase CRM $VERSION" --notes-file RELEASE_NOTES.md
+          mapfile -t files < <(node -e 'for(const f of require("./release-inventory.json").files)console.log("release-files/"+f.name)')
+          gh release upload "v$VERSION" "${files[@]}" release-inventory.json --repo "$GITHUB_REPOSITORY"
+      - name: Verify files uploaded to GitHub before publishing
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/v$VERSION" > remote-release.json
+          node scripts/verify-release-files.js --remote remote-release.json release-inventory.json
+      - name: Publish complete release
+        run: gh release edit "v$VERSION" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+      - name: Save release verification report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-verification
+          if-no-files-found: ignore
+          path: |
+            release-inventory.json
+            remote-release.json

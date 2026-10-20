@@ -1,0 +1,47 @@
+Публичная проверка: https://github.com/Busya228/wisebase-desktop/releases/tag/v29.2.5
+Опубликованные файлы на момент проверки:
+WiseBase-CRM-29.2.5-mac-x64.zip.blockmap (139798 bytes)
+
+Локальные проверки:
+ok complete set: 9 files, both platforms, SHA512
+ok Windows subset includes latest.yml and NSIS
+ok macOS subset includes both architectures
+ok missing WiseBase-CRM-Setup-29.2.6.exe blocks publishing
+ok missing WiseBase-CRM-Setup-29.2.6.exe.blockmap blocks publishing
+ok missing WiseBase-CRM-Portable-29.2.6.exe blocks publishing
+ok missing latest.yml blocks publishing
+ok missing WiseBase-CRM-29.2.6-mac-x64.zip blocks publishing
+ok missing WiseBase-CRM-29.2.6-mac-x64.zip.blockmap blocks publishing
+ok missing WiseBase-CRM-29.2.6-mac-arm64.zip blocks publishing
+ok missing WiseBase-CRM-29.2.6-mac-arm64.zip.blockmap blocks publishing
+ok missing latest-mac.yml blocks publishing
+ok corrupt installer rejected
+ok stale metadata rejected
+ok missing ARM reference rejected
+ok unsafe metadata path rejected
+ok remote uploaded sizes and hashes verified
+ok observed failure: only one blockmap cannot be published
+ok release must remain draft through verification
+ok remote wrong size rejected
+ok unfinished upload rejected
+ok remote corrupt upload rejected
+ok single publisher, artifact transfer, check before public visibility
+PASS 23 release completeness checks
+
+Приложение: file:///data/wb/WiseBase-v29.2.5-release/desktop/app/index.html
+Браузер:     /usr/local/bin/chromium
+Тестов:     4
+
+▶ desktop-main … ✓ прошёл  (0.3 с)
+▶ release-consistency … ✓ прошёл  (0.3 с)
+▶ release-files … ✓ прошёл  (0.0 с)
+▶ release-version … ✓ прошёл  (0.0 с)
+
+──────────────────────────────────────────────
+  ✓ desktop-main            0.3 с
+  ✓ release-consistency     0.3 с
+  ✓ release-files           0.0 с
+  ✓ release-version         0.0 с
+──────────────────────────────────────────────
+Итог: 4 из 4 наборов тестов прошли
+Логи каждого набора: test/last-run-*.log
