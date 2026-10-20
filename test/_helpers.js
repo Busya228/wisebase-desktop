@@ -17,14 +17,30 @@ const CHROME_PATH = [process.env.CHROME_PATH, "/usr/local/bin/chromium", "/usr/b
 // более сложные тесты случайными и зависимыми от сети.
 const STUB_SRC = `
 window.__TEST_STUB__ = true;
+// An explicit backend outage must survive reloads independently of Chromium's
+// transient navigator.onLine/online events. Enabled only by the queue test.
+function __testStubResult(table, op, values, single) {
+  const offline = window.__TEST_BACKEND_OFFLINE__ === true;
+  if (window.__TEST_STUB_AUDIT__ === true && op) {
+    const key = '__wisebase_test_backend_writes';
+    const writes = JSON.parse(localStorage.getItem(key) || '[]');
+    writes.push({table, op, values, accepted: !offline});
+    localStorage.setItem(key, JSON.stringify(writes));
+  }
+  return offline ? {data:null, error:{message:'Failed to fetch'}}
+                 : {data:single ? null : [], error:null};
+}
 window.supabase = { createClient: () => ({
   auth:{ getSession:async()=>({data:{session:null}}), onAuthStateChange:()=>({data:{subscription:{unsubscribe(){}}}}),
          signInWithPassword:async()=>({error:null}), signOut:async()=>({error:null}), resetPasswordForEmail:async()=>({error:null}) },
-  from:()=>({ select(){return this;}, eq(){return this;}, in(){return this;}, is(){return this;}, like(){return this;},
+  from:(table)=>({ _op:null, _values:null, select(){return this;}, eq(){return this;}, in(){return this;}, is(){return this;}, like(){return this;},
               not(){return this;}, neq(){return this;}, lte(){return this;}, order(){return this;}, limit(){return this;},
-              single(){return Promise.resolve({data:null,error:null});},
-              insert(){return this;}, update(){return this;}, delete(){return this;}, upsert(){return this;},
-              then(res){res({data:[],error:null});} }),
+              single(){return Promise.resolve(__testStubResult(table,this._op,this._values,true));},
+              insert(v){this._op='insert';this._values=v;return this;},
+              update(v){this._op='update';this._values=v;return this;},
+              delete(){this._op='delete';return this;},
+              upsert(v){this._op='upsert';this._values=v;return this;},
+              then(res){res(__testStubResult(table,this._op,this._values,false));} }),
   channel:()=>({on(){return this;},subscribe(){return this;}}), removeChannel:()=>{} }) };
 window.XLSX = { utils:{ book_new:()=>({Sheets:{},SheetNames:[]}), aoa_to_sheet:d=>({__d:d}), book_append_sheet(){}, sheet_to_json:()=>[] }, writeFile(){}, read:()=>({SheetNames:[]}) };
 `;
