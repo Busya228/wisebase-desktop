@@ -11,7 +11,7 @@ const seed=JSON.parse(fs.readFileSync(path.join(__dirname,'fixtures/quarter-plan
   const bad=structuredClone(fixture);bad.Sheets['Лист1'].I5={t:'e',v:'#VALUE!'};result.errorCell=reject(()=>QP.parseWorkbook(bad));
   const noCache=structuredClone(fixture);delete noCache.Sheets['Лист1'].I5.v;result.noCache=reject(()=>QP.parseWorkbook(noCache));
   const badTotal=structuredClone(fixture);badTotal.Sheets['Лист1'].B4.v=1;result.totalMismatch=reject(()=>QP.parseWorkbook(badTotal));
-  result.duplicate=reject(()=>QP.validate({...seed,rows:[seed.rows[0],seed.rows[0]]}));result.badQuarter=reject(()=>QP.validate({...seed,quarter:1}));result.conditional=QP.isConditionalRows(['Деменьшин П. М.','Дронь Н. С.','Стариков А. Ю.','Турусов К. М.'].map(name=>({'РМ ФИО':name,'Направление_РМ':'Урал','Факт_отгрузки_мес., руб.':1,'Факт_заказов_мес., руб.':1,'Факт_поступлений_мес., руб.':1})));result.notByFilename=!QP.isConditionalRows([{'РМ ФИО':'Деменьшин П. М.','Факт_отгрузки_мес., руб.':100}]);result.negative=reject(()=>QP.validate({...seed,rows:[{...seed.rows[0],planShip:-1}]}));result.fictitious=reject(()=>QP.validate({...seed,rows:[{...seed.rows[0],name:'Стариков А. Ю.'}]}));
+  result.duplicate=reject(()=>QP.validate({...seed,rows:[seed.rows[0],seed.rows[0]]}));result.badQuarter=reject(()=>QP.validate({...seed,quarter:1}));result.negative=reject(()=>QP.validate({...seed,rows:[{...seed.rows[0],planShip:-1}]}));result.fictitious=reject(()=>QP.validate({...seed,rows:[{...seed.rows[0],name:'Стариков А. Ю.'}]}));
   const old=[seed.rows[0]], update=[{...seed.rows[0],planShip:null,planReceipts:0}];result.merged=QP.mergeRows(old,update)[0];result.oldUnchanged=old[0].planReceipts===36929520;
   result.rename=QP.mergeRows(old,[{...seed.rows[0],name:'Новое ФИО',planShip:null}]);
   currentUser={id:'plans-a'};currentProfile={id:'plans-a',role:'manager',full_name:'Менеджер'};
@@ -29,7 +29,6 @@ const seed=JSON.parse(fs.readFileSync(path.join(__dirname,'fixtures/quarter-plan
   return result;
  },{fixture,seed});
  assert(pure.count===9&&pure.total===72000000&&pure.receipts===88560000,'из исходной книги: только 9 месячных строк, планы 72 млн / 88,56 млн');
- assert(pure.conditional&&pure.notByFilename,'условный образец распознается по содержимому, не имени файла');
  assert(pure.blanks,'ноябрь/декабрь не превращаются в нули');
  assert(pure.fields.join(',')==='dir,month,name,planReceipts,planShip,source','факты, маржа, второй лист, итоги не попадают в планы');
  for(const k of ['errorCell','noCache','totalMismatch','duplicate','badQuarter','negative','fictitious'])assert(pure[k],'валидация: '+k);

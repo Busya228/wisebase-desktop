@@ -6,7 +6,7 @@ name: Release desktop app
 # приложение (app/, main.js, package.json, build/). Ни версию, ни теги вручную
 # поднимать не нужно:
 #   • номер версии: ровно тот, что в package.json ("version"), если такой ещё
-#     не выпускали; иначе автоматически <major>.<minor>.<номер запуска>;
+#     больше всех существующих релизов; иначе следующий patch старшего релиза;
 #   • сначала прогоняются автотесты (test/run-all.js) — если хоть один упал,
 #     сборки нет и пользователи ничего не получат;
 #   • Windows и macOS собираются параллельно и заливаются в черновик релиза;
@@ -49,14 +49,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Номер версии:
-          #  • если версии из package.json (например 29.1.0) ещё нет в релизах —
-          #    выпускаем ровно её;
-          #  • если она уже выпущена — автоматически <major>.<minor>.<номер запуска>.
-          V=$(node -p "require('./package.json').version")
-          if gh release view "v$V" --repo "${{ github.repository }}" >/dev/null 2>&1; then
-            V="$(echo "$V" | cut -d. -f1-2).${{ github.run_number }}"
-          fi
+          # Ошибка запроса GitHub прерывает выпуск, а не маскируется как отсутствие версии.
+          gh release list --repo "${{ github.repository }}" --limit 1000 --json tagName > "$RUNNER_TEMP/releases.json"
+          V=$(node scripts/next-release-version.js "$RUNNER_TEMP/releases.json")
           echo "Версия релиза: $V"
           echo "version=$V" >> "$GITHUB_OUTPUT"
 

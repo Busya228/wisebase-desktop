@@ -1,0 +1,102 @@
+WiseBase 29.2.5 — локальная проверка исходников
+
+Финальный полный прогон: 38 из 38 наборов прошли.
+Среда: Linux Chromium, Node; отдельный desktop-репозиторий, сеть к рабочим сервисам заблокирована.
+При повторных прогонах существующий offline-queue был нестабилен: один прогон 37/38, отдельный повтор прошел; в итоговом прогоне этот набор прошел со второй попытки. Код офлайн-очереди в исправлении импорта не менялся. Это ограничение проверки, не подтверждение работы живой базы.
+
+Реальные вложенные Excel-файлы проверены SheetJS 0.20.3 через интерфейс; подтверждены выбор блока U:AW и точность данных, путь квартальной книги к предпросмотру, запись только планов и сохранение месячных фактов. Сервер заменен локальной заглушкой.
+Исходные XLSX-файлы в архив не включены.
+
+Не выполнялись: живая миграция SQL, запись в рабочую CRM, GitHub Actions, сборка/подпись Windows/macOS, проверка доставки автообновления.
+
+Приложение: file:///data/wb/fix-import-29.2.5/isolated/repo/app/index.html
+Браузер:     /usr/local/bin/chromium
+Тестов:     38
+
+▶ access-rights … ✓ прошёл  (2.6 с)
+▶ analytics-funnel … ✓ прошёл  (2.5 с)
+▶ collapsible-sections … ✓ прошёл  (2.5 с)
+▶ contact-export-policy … ✓ прошёл  (2.5 с)
+▶ delegation-admin … ✓ прошёл  (2.4 с)
+▶ desktop-main … ✓ прошёл  (0.4 с)
+▶ desktop-settings … ✓ прошёл  (5.5 с)
+▶ double-submit … ✓ прошёл  (3.4 с)
+▶ form-sections … ✓ прошёл  (2.9 с)
+▶ geo-points … ✓ прошёл  (2.8 с)
+▶ head-role … ✓ прошёл  (2.4 с)
+▶ holding-and-fields … ✓ прошёл  (3.6 с)
+▶ links-column-resize … ✓ прошёл  (3.1 с)
+▶ live-refresh … ✓ прошёл  (14.7 с)
+▶ login-remember … ✓ прошёл  (2.6 с)
+▶ navigation-pages … ✓ прошёл  (3.6 с)
+▶ offers-scope … ✓ прошёл  (2.5 с)
+▶ offline-queue … ✓ прошёл со 2-й попытки  (6.9 с)
+▶ pure-functions … ✓ прошёл  (0.1 с)
+▶ push-notifications … ✓ прошёл  (2.8 с)
+▶ pwa-manifest … ✓ прошёл  (2.7 с)
+▶ quarter-plans … ✓ прошёл  (3.3 с)
+▶ realtime-subscription … ✓ прошёл  (2.5 с)
+▶ release-consistency … ✓ прошёл  (0.5 с)
+▶ release-version … ✓ прошёл  (0.0 с)
+▶ reminders … ✓ прошёл  (2.6 с)
+▶ report-formats … ✓ прошёл  (2.8 с)
+▶ reports … ✓ прошёл  (4.1 с)
+▶ roles-admin … ✓ прошёл  (2.6 с)
+▶ security-session … ✓ прошёл  (4.2 с)
+▶ smoke-load … ✓ прошёл  (2.4 с)
+▶ startup-timeout … ✓ прошёл  (4.9 с)
+▶ stats-page … ✓ прошёл  (2.6 с)
+▶ stats-reports … ✓ прошёл  (2.5 с)
+▶ undo-redo … ✓ прошёл  (2.8 с)
+▶ user-settings-sync … ✓ прошёл  (7.9 с)
+▶ visit-reminder-scope … ✓ прошёл  (2.5 с)
+▶ xlsx-import … ✓ прошёл  (2.5 с)
+
+──────────────────────────────────────────────
+  ✓ access-rights           2.6 с
+  ✓ analytics-funnel        2.5 с
+  ✓ collapsible-sections    2.5 с
+  ✓ contact-export-policy   2.5 с
+  ✓ delegation-admin        2.4 с
+  ✓ desktop-main            0.4 с
+  ✓ desktop-settings        5.5 с
+  ✓ double-submit           3.4 с
+  ✓ form-sections           2.9 с
+  ✓ geo-points              2.8 с
+  ✓ head-role               2.4 с
+  ✓ holding-and-fields      3.6 с
+  ✓ links-column-resize     3.1 с
+  ✓ live-refresh            14.7 с
+  ✓ login-remember          2.6 с
+  ✓ navigation-pages        3.6 с
+  ✓ offers-scope            2.5 с
+  ✓ offline-queue           6.9 с
+  ✓ pure-functions          0.1 с
+  ✓ push-notifications      2.8 с
+  ✓ pwa-manifest            2.7 с
+  ✓ quarter-plans           3.3 с
+  ✓ realtime-subscription   2.5 с
+  ✓ release-consistency     0.5 с
+  ✓ release-version         0.0 с
+  ✓ reminders               2.6 с
+  ✓ report-formats          2.8 с
+  ✓ reports                 4.1 с
+  ✓ roles-admin             2.6 с
+  ✓ security-session        4.2 с
+  ✓ smoke-load              2.4 с
+  ✓ startup-timeout         4.9 с
+  ✓ stats-page              2.6 с
+  ✓ stats-reports           2.5 с
+  ✓ undo-redo               2.8 с
+  ✓ user-settings-sync      7.9 с
+  ✓ visit-reminder-scope    2.5 с
+  ✓ xlsx-import             2.5 с
+──────────────────────────────────────────────
+Итог: 38 из 38 наборов тестов прошли
+Логи каждого набора: test/last-run-*.log
+
+Проверки реальных файлов:
+PASS реальный 2.xlsx: выбор U:AW, 4 строки, все факты и C2 точны; пустое не ноль
+PASS реальная квартальная книга: обычная кнопка -> предпросмотр -> только планы; факты 2.xlsx сохранены
+PASS исходный одноблочный формат с условными значениями тоже разрешен
+PASS отмена и отсутствие таблицы: нет записи, точная диагностика без ложной ошибки ФИО

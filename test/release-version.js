@@ -1,0 +1,10 @@
+const {nextReleaseVersion:next}=require('../scripts/next-release-version');
+const assert=require('assert/strict');
+assert.equal(next('29.2.5',[]),'29.2.5');
+assert.equal(next('29.2.5',[{tagName:'v29.2.4'}]),'29.2.5');
+assert.equal(next('29.2.5',[{tagName:'v29.2.5'}]),'29.2.6');
+assert.equal(next('29.2.5',[{tagName:'v29.2.153'},{tagName:'v29.2.4'}]),'29.2.154');
+assert.equal(next('29.2.5',[{tagName:'v30.0.0'}]),'30.0.1');
+assert.equal(next('30.0.0',[{tagName:'v29.2.153'}]),'30.0.0');
+assert.throws(()=>next('bad',[]));
+console.log('ok release version always exceeds published semantic versions, not CI run number');
