@@ -1725,6 +1725,10 @@ button,a,select,label{touch-action:manipulation}
 .empty-state .btn{margin-top:6px}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js" crossorigin="anonymous"></script>
+<style>
+/* 29.2.4: точечные дополнения, без перестройки существующих блоков. */
+.qp-scroll{overflow-x:auto;max-width:100%;-webkit-overflow-scrolling:touch}.qp-scroll table{min-width:700px}.qp-note{font-size:13px;line-height:1.6;color:var(--t2);padding:12px 16px;margin:0}#qp-preview select{max-width:100%;min-height:38px}#an-panel-quarter .rep-header{flex-wrap:wrap;gap:12px}#qp-year,#qp-quarter,#qp-manager,#qp-preview select{min-height:44px;max-width:100%;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text);font:inherit;padding:8px 10px}#an-panel-quarter .rep-header label{display:flex;align-items:center;gap:8px}#qp-save,#qp-preview button{min-height:44px}#qp-status{color:var(--accent)}#repTableSection{overflow-x:auto}#repTableSection table{min-width:800px}#an-tab-quarter{white-space:nowrap;background:transparent;border:0;border-bottom:2px solid transparent;font-family:inherit}#an-tab-quarter.active{border-bottom-color:var(--accent)}.qp-scroll::before{display:none}@media(max-width:600px){.qp-scroll::before{display:block;content:"Прокрутите таблицу вправо →";font-size:12px;color:var(--t2);padding:8px 14px}#an-panel-reports,#an-panel-quarter,#st-panel-reports{padding-bottom:104px}#qp-receipts,#qp-stats-receipts,#qp-content,#qp-save-status{scroll-margin-bottom:104px}#page-analytics>.toolbar{flex-wrap:wrap;height:auto}#page-analytics>.toolbar .rep-tabs{margin-left:0!important;max-width:100%;overflow-x:auto}.rep-tab{padding-left:12px;padding-right:12px}}
+</style>
 </head>
 <body class="t9">
 
@@ -2317,6 +2321,7 @@ button,a,select,label{touch-action:manipulation}
             <thead>
               <tr>
                 <th>Менеджер</th>
+                <th title="План отгрузок; за несколько месяцев — сумма заполненных планов">План отгрузок</th>
                 <th>Отгрузки (факт)</th>
                 <th>Прирост к пр. году</th>
                 <th>Выполнение плана</th>
@@ -3261,7 +3266,7 @@ let TODAY=today(); // обновляется без перезагрузки п�
 // новой присланной версии). Показывается в Профиле, чтобы можно было сверить «то, что
 // открыто на телефоне» с «тем, что прислали только что» — без гадания, обновился
 // ли сайт после деплоя на хостинг.
-const APP_BUILD='ver 29.2.3 · персональные напоминания о визитах';
+const APP_BUILD='ver 29.2.4 · квартальные планы и поступления';
 // Преобразует Date обратно в строку 'YYYY-MM-DD' по ЛОКАЛЬНЫМ компонентам (не UTC) — пара к today().
 function dateToLocalStr(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 // Парсит строку 'YYYY-MM-DD' как ЛОКАЛЬНУЮ дату (полночь по местному времени), а не UTC.
@@ -7191,7 +7196,7 @@ function srAllMonths(){
   const api=window.repApi; if(!api)return [];
   const data=api.getData()||{};
   return Object.keys(data).map(k=>{ const m=/^(\d{4})-(\d{1,2})$/.exec(k); const e=data[k];
-      return m&&e&&Array.isArray(e.rows)&&e.rows.length?{y:+m[1],m:+m[2]-1,key:k,rows:e.rows.map(api.parseRow)}:null; })
+      return m&&e&&Array.isArray(e.rows)&&e.rows.length?{y:+m[1],m:+m[2]-1,key:k,rows:window.QP?QP.overlay(+m[1],+m[2],e.rows):e.rows.map(api.parseRow)}:null; })
     .filter(Boolean).sort((a,b)=>(a.y*12+a.m)-(b.y*12+b.m));
 }
 // Окно периода: N календарных месяцев, заканчивая последним загруженным (пропуски — пустые месяцы).
@@ -7208,10 +7213,11 @@ function srTotals(rows){
   const sum=f=>{ let t=null; rows.forEach(r=>{ if(r[f]!==null&&r[f]!==undefined) t=(t||0)+r[f]; }); return t; };
   const avg=f=>{ const a=rows.map(r=>r[f]).filter(v=>v!==null&&v!==undefined); return a.length?a.reduce((x,y)=>x+y,0)/a.length:null; };
   const plan=sum('planShip'), fact=sum('factShip'), prev=sum('prevShip');
-  return { plan, fact, prev, orders:sum('factOrders'),
+  const strict=rows.some(r=>r._externalPlan), complete=rows.every(r=>r.planShip!==null&&r.factShip!==null);
+  return { plan, fact, prev, strict, complete, orders:sum('factOrders'),
     unshipPast:sum('unshipPast'), unshipCur:sum('unshipCur'), unshipFut:sum('unshipFut'),
     unship:(sum('unshipPast')||0)+(sum('unshipCur')||0)+(sum('unshipFut')||0),
-    pct: plan>0&&fact!==null?fact/plan:null, growth: prev>0&&fact!==null?fact/prev-1:null,
+    pct: (!strict||complete)&&plan>0&&fact!==null?fact/plan:null, growth: prev>0&&fact!==null?fact/prev-1:null,
     c2:avg('c2fact'), c2f:avg('c2fore') };
 }
 function srMonthRows(e){ return !e.rows?[]:srMgr?e.rows.filter(r=>r.name===srMgr):e.rows; }
@@ -7250,20 +7256,22 @@ function renderStatsReports(){
   const months=win.map(e=>({e, t:e.rows?srTotals(srMonthRows(e)):null}));
   srRenderKpis(months); srRenderDyn(months); srRenderPlan(months); srRenderC2(months);
   srRenderRank(withData); srRenderHeat(win, names);
+  if(window.QP)QP.receiptsStats(win);
 }
 function srRenderKpis(months){
   const el=document.getElementById('sr-kpis'); if(!el)return;
   const has=months.filter(x=>x.t);
   const sum=f=>has.reduce((s,x)=>s+(x.t[f]||0),0);
   const plan=sum('plan'), fact=sum('fact'), prev=has.reduce((s,x)=>s+(x.t.prev||0),0), orders=sum('orders');
-  const pct=plan>0?fact/plan:null, growth=prev>0?fact/prev-1:null;
+  const partial=has.some(x=>x.t.strict)&&has.some(x=>!x.t.complete);
+  const pct=!partial&&plan>0?fact/plan:null, growth=prev>0?fact/prev-1:null;
   const last=has[has.length-1], prevM=has[has.length-2];
   const metPlan=has.filter(x=>x.t.pct!==null&&x.t.pct>=1).length, withPlan=has.filter(x=>x.t.pct!==null).length;
   const c2=has.map(x=>x.t.c2).filter(v=>v!==null), c2avg=c2.length?c2.reduce((a,b)=>a+b,0)/c2.length:null;
   const lastDelta=last&&prevM&&prevM.t.fact>0&&last.t.fact!==null?last.t.fact/prevM.t.fact-1:null;
   const cards=[
     {lbl:'Факт отгрузок',val:srMln(fact),sub:growth===null?'за период':(growth<0?'▼ ':'▲ ')+srPct(Math.abs(growth))+' к прошлому году',cls:growth===null?'':growth<0?'sr-k-dn':'sr-k-up'},
-    {lbl:'Выполнение плана',val:srPct(pct),sub:plan?srMln(fact)+' из '+srMln(plan):'план в отчётах не указан',accent:pct!==null&&pct>=1},
+    {lbl:'Выполнение плана',val:srPct(pct),sub:partial?'Неполное сопоставление плана и факта':plan?srMln(fact)+' из '+srMln(plan):'план в отчётах не указан',accent:pct!==null&&pct>=1},
     {lbl:'Месяцев с планом ≥100%',val:withPlan?metPlan+' из '+withPlan:'—',sub:'месяцы, где план выполнен'},
     {lbl:'Факт заказов',val:srMln(orders),sub:'за период'},
     {lbl:'Неотгружено сейчас',val:last?srMln(last.t.unship):'—',sub:last&&last.t.unshipPast?'⚠ '+srMln(last.t.unshipPast)+' прошлых периодов':'на конец '+(last?srLbl(last.e):'периода')},
@@ -7317,8 +7325,8 @@ function srRenderRank(withData){
   const api=window.repApi;
   // repAggregate ждёт исходные строки отчёта
   const data=api.getData();
-  const entries=withData.map(e=>data[e.key]).filter(Boolean);
-  const mgrs=api.repAggregate(entries.length===1?[entries[0],{rows:[]}]:entries);
+  const entries=withData.map(e=>data[e.key]?{...data[e.key],_y:e.y,_m:e.m+1}:null).filter(Boolean);
+  const mgrs=api.repAggregate(entries,true);
   // сколько месяцев каждый выполнил план
   const met=new Map();
   withData.forEach(e=>e.rows.forEach(r=>{ const pct=r.planShip>0&&r.factShip!==null?r.factShip/r.planShip:null;
@@ -7790,9 +7798,10 @@ function renderAnalytics(){ renderAnKpis(); renderFunnel(); renderFlow(); render
   const REP_LEGACY_KEY='wb_rep_data';   // старые отчёты «только на этом устройстве» (до 29.1.0)
   let repData={};
   let repRemoteState='idle';            // idle | loading | ok | missing | error
-  window.wbResetReportCache=function(){repData={};repRemoteState='idle';};
+  window.wbResetReportCache=function(){repData={};repRemoteState='idle';if(window.QP)QP.reset();};
   window.wbLoadReportCache=function(){
     repData={};try{const raw=localStorage.getItem(wbDataKey(REP_CACHE_KEY));if(raw)repData=JSON.parse(raw)||{};}catch(_){}
+    if(window.QP)QP.loadCache();
   };
 
   function curKey(){ return repYear+'-'+(repMonth+1); }
@@ -7821,7 +7830,8 @@ function renderAnalytics(){ renderAnKpis(); renderFunnel(); renderFlow(); render
   // места в localStorage: у браузера лимит ~5 МБ на все данные приложения).
   const REP_COLS=['РМ ФИО','ФИО','Направление_РМ','Направление','План_отгрузок_мес., руб.','Факт_отгрузки_мес., руб.',
     'Выполнение плана, отгр.','Факт отгрузки(прош. год)','Прирост гг (отгрузки)','Факт_заказов_мес., руб.',
-    'НЕОТГРУЖЕННЫЕ прошлых периодов','НЕОТГРУЖЕННЫЕ текущего месяца','НЕОТГРУЖЕННЫЕ будущих периодов','Факт С2, %','С2, % Прогноз на 1 мес. вперед'];
+    'НЕОТГРУЖЕННЫЕ прошлых периодов','НЕОТГРУЖЕННЫЕ текущего месяца','НЕОТГРУЖЕННЫЕ будущих периодов','Факт С2, %','С2, % Прогноз на 1 мес. вперед',
+    'План_поступлений_мес., руб.','Факт_поступлений_мес., руб.'];
   function plural(n,one,few,many){ const a=Math.abs(n)%100, b=a%10; if(a>10&&a<20)return many; if(b>1&&b<5)return few; if(b===1)return one; return many; }
   function periodLabel(){
     if(repPeriod==='quarter') return Q_RU[Math.floor(repMonth/3)]+' квартал '+repYear;
@@ -7912,6 +7922,8 @@ function renderAnalytics(){ renderAnKpis(); renderFunnel(); renderFlow(); render
   window.repLoadRemote=async function(){
     if(typeof sb==='undefined'||!sb||typeof currentUser==='undefined'||!currentUser) return;
     const ctx=wbSessionContext();repRemoteState='loading';
+    if(window.QP)await QP.load();
+    if(!wbSameSession(ctx))return;
     try{
       const { data, error } = await sb.from('reports').select('year,month,rows,file_name,loaded_at,uploaded_by_name');
       if(!wbSameSession(ctx))return;
@@ -7959,18 +7971,25 @@ function renderAnalytics(){ renderAnKpis(); renderFunnel(); renderFlow(); render
 
   window.repHandleFile=function(input){
     const file=input.files[0]; if(!file) return;
+    if(file.size>10*1024*1024){input.value='';alert('Максимальный размер отчета — 10 МБ.');return;}
     input.value='';
     if(!repCanEdit()){ alert('Загружать отчёты может сотрудник с назначенной ролью — обратитесь к администратору.'); return; }
     if(typeof isOnline==='function'&&!isOnline()){ alert('Нет подключения к интернету — отчёт сохраняется в общую базу, поэтому загрузить его можно только онлайн.'); return; }
     if(typeof XLSX==='undefined'||!XLSX.read){ alert('Модуль чтения Excel ещё не загрузился — проверьте интернет и попробуйте снова.'); return; }
     const ctx=wbSessionContext();if(!ctx.userId)return;
+    const targetYear=repYear,targetMonth=repMonth;
     const rd=new FileReader();
     rd.onload=async function(e){
       if(!wbSameSession(ctx))return;
       try{
+        // Этот конкретный учебный файл запрещен к импорту; название файла не является критерием.
+        if(globalThis.crypto?.subtle){const hash=[...new Uint8Array(await crypto.subtle.digest('SHA-256',e.target.result))].map(b=>b.toString(16).padStart(2,'0')).join('');
+          if(!wbSameSession(ctx))return;
+          if(hash==='930567cf874ff1bebb2a3d4adf709412719789e0b3b31dbb14b7ddd52c052f40'){alert('Это условный образец «2.xlsx». Загрузите актуальный реальный отчет CRM.');return;}}
         const wb=XLSX.read(e.target.result,{type:'array'});
         const ws=wb.Sheets[wb.SheetNames[0]];
         const raw=ws?XLSX.utils.sheet_to_json(ws,{defval:null}):[];
+        if(window.QP&&QP.isConditionalRows(raw)){alert('В файле распознан условный образец «2.xlsx». Нужен реальный актуальный отчет.');return;}
         // Строки без ФИО менеджера (пустые, «Итого» и т.п.) в расчёт не берём.
         const rows=raw.map(r=>{ const o={}; REP_COLS.forEach(c=>{ if(r[c]!==undefined) o[c]=r[c]; }); return o; })
           .filter(r=>{ const n=String(r['РМ ФИО']||r['ФИО']||'').trim(); return n && !/^итог/i.test(n); });
@@ -7978,9 +7997,9 @@ function renderAnalytics(){ renderAnKpis(); renderFunnel(); renderFlow(); render
           alert('В файле не найдено строк с менеджерами. Нужна колонка «РМ ФИО» (или «ФИО») на первом листе.');
           return;
         }
-        const key=curKey();
+        const key=targetYear+'-'+(targetMonth+1);
         const prev=repData[key];
-        const y=repYear, mo=repMonth;
+        const y=targetYear, mo=targetMonth;
         const monthName=MONTHS_RU[mo]+' '+y;
         if(prev && !confirm('За '+monthName+' уже загружен отчёт ('+prev.loaded+(prev.by?', '+prev.by:'')+'). Заменить его новым файлом? Отчёт заменится у всех сотрудников.')) return;
         const rec={year:y,month:mo+1,rows,file_name:String(file.name||'').slice(0,120),loaded_at:new Date().toISOString(),
@@ -8026,9 +8045,11 @@ function renderAnalytics(){ renderAnKpis(); renderFunnel(); renderFlow(); render
     return{
       name: String(r['РМ ФИО']||r['ФИО']||'—').trim(),
       dir: r['Направление_РМ']||r['Направление']||'',
-      planShip: cleanNum(r['План_отгрузок_мес., руб.']),
+      planShip: /^стариков\s+а[.\s]*ю[.\s]*$/i.test(String(r['РМ ФИО']||r['ФИО']||'').trim()) ? null : cleanNum(r['План_отгрузок_мес., руб.']),
+      planReceipts: /^стариков\s+а[.\s]*ю[.\s]*$/i.test(String(r['РМ ФИО']||r['ФИО']||'').trim()) ? null : cleanNum(r['План_поступлений_мес., руб.']),
+      factReceipts: cleanNum(r['Факт_поступлений_мес., руб.']),
       factShip: cleanNum(r['Факт_отгрузки_мес., руб.']),
-      planPct: cleanNum(r['Выполнение плана, отгр.']),
+      planPct: /^стариков\s+а[.\s]*ю[.\s]*$/i.test(String(r['РМ ФИО']||r['ФИО']||'').trim()) ? null : cleanNum(r['Выполнение плана, отгр.']),
       prevShip: cleanNum(r['Факт отгрузки(прош. год)']),
       growth: cleanNum(r['Прирост гг (отгрузки)']),
       factOrders: cleanNum(r['Факт_заказов_мес., руб.']),
@@ -8045,24 +8066,29 @@ function renderAnalytics(){ renderAnKpis(); renderFunnel(); renderFlow(); render
   //   неотгруженные — остаток, поэтому берётся из ПОСЛЕДНЕГО месяца с данными;
   //   С2 — среднее по месяцам.
   // Для одного месяца значения из файла остаются как есть.
-  function repAggregate(entries){
-    if(entries.length===1) return entries[0].rows.map(parseRow);
+  function repAggregate(entries,force=false){
+    const parsed=e=>window.QP&&e._y&&e._m?QP.overlay(e._y,e._m,e.rows):e.rows.map(parseRow);
+    if(entries.length===1&&!force) return parsed(entries[0]);
     const add=(a,b)=>b===null?a:(a===null?b:a+b);
     const map=new Map();
-    entries.forEach(({rows})=>rows.map(parseRow).forEach(m=>{
-      let g=map.get(m.name);
-      if(!g){ g={name:m.name,dir:m.dir,planShip:null,factShip:null,prevShip:null,factOrders:null,unshipPast:null,unshipCur:null,unshipFut:null,_c2:[],_c2f:[]}; map.set(m.name,g); }
+    const strictScope=entries.some(e=>parsed(e).some(m=>m._externalPlan));
+    entries.forEach(e=>parsed(e).forEach(m=>{
+      const identity=String(m.dir||'')+'|'+m.name;let g=map.get(identity);
+      if(!g){ g={name:m.name,dir:m.dir,planShip:null,factShip:null,planReceipts:null,factReceipts:null,prevShip:null,factOrders:null,unshipPast:null,unshipCur:null,unshipFut:null,_c2:[],_c2f:[],_pairedShip:0}; map.set(identity,g); }
       if(m.dir) g.dir=m.dir;
       g.planShip=add(g.planShip,m.planShip); g.factShip=add(g.factShip,m.factShip);
+      g.planReceipts=add(g.planReceipts,m.planReceipts??null);g.factReceipts=add(g.factReceipts,m.factReceipts??null);
+      if(m.planShip!==null&&m.factShip!==null)g._pairedShip++;
       g.prevShip=add(g.prevShip,m.prevShip); g.factOrders=add(g.factOrders,m.factOrders);
-      g.unshipPast=m.unshipPast; g.unshipCur=m.unshipCur; g.unshipFut=m.unshipFut; // entries идут по возрастанию месяца
+      if(!m._planOnly){g.unshipPast=m.unshipPast; g.unshipCur=m.unshipCur; g.unshipFut=m.unshipFut;} // entries идут по возрастанию месяца
       if(m.c2fact!==null) g._c2.push(m.c2fact);
       if(m.c2fore!==null) g._c2f.push(m.c2fore);
     }));
     const avg=a=>a.length?a.reduce((s,v)=>s+v,0)/a.length:null;
     return [...map.values()].map(g=>({
       name:g.name, dir:g.dir, planShip:g.planShip, factShip:g.factShip, prevShip:g.prevShip, factOrders:g.factOrders,
-      planPct: g.planShip>0&&g.factShip!==null ? g.factShip/g.planShip : null,
+      planReceipts:g.planReceipts,factReceipts:g.factReceipts,
+      planPct: (!strictScope||g._pairedShip===entries.length)&&g.planShip>0&&g.factShip!==null ? g.factShip/g.planShip : null,
       growth: g.prevShip>0&&g.factShip!==null ? g.factShip/g.prevShip-1 : null,
       unshipPast:g.unshipPast, unshipCur:g.unshipCur, unshipFut:g.unshipFut,
       c2fact:avg(g._c2), c2fore:avg(g._c2f),
@@ -8079,7 +8105,9 @@ function renderAnalytics(){ renderAnKpis(); renderFunnel(); renderFlow(); render
     if(!noData||!kpisEl) return;
 
     const months=periodMonths();
-    const entries=months.map(i=>repData[repYear+'-'+(i+1)]).filter(e=>e&&e.rows&&e.rows.length);
+    const scopedPlans=!!window.QP&&months.some(i=>QP.monthly(repYear,i+1).some(r=>r.planShip!==null||r.planReceipts!==null));
+    const entries=months.map(i=>{const e=repData[repYear+'-'+(i+1)];return e&&e.rows?.length?{...e,_y:repYear,_m:i+1}:scopedPlans?{rows:[],_y:repYear,_m:i+1,_planOnly:true}:null;}).filter(Boolean);
+    if(window.QP)QP.receiptsAnalytics(entries);
 
     if(!entries.length){
       kpisEl.innerHTML=''; tableSection.style.display='none'; unshipSection.style.display='none';
@@ -8088,16 +8116,17 @@ function renderAnalytics(){ renderAnKpis(); renderFunnel(); renderFlow(); render
       return;
     }
     noData.style.display='none';
-    lastUpEl.textContent=entries.length===1&&repPeriod==='month'
+    lastUpEl.textContent=entries.every(e=>e._planOnly)?'Только планы · актуальный факт не загружен':entries.length===1&&repPeriod==='month'
       ? 'Обновлено: '+entries[0].loaded+(entries[0].by?' · '+entries[0].by:'')
-      : 'Месяцев с данными: '+entries.length+' из '+months.length;
+      : 'Месяцев с данными: '+entries.filter(e=>!e._planOnly).length+' из '+months.length+(scopedPlans?' · план: сумма заполненных месяцев; неполный период не считается выполненным':'');
     const mgrs=repAggregate(entries);
 
     // KPI
     const sum=a=>a.reduce((s,v)=>s+(v||0),0);
-    const totalShip=sum(mgrs.map(m=>m.factShip));
-    const totalOrders=sum(mgrs.map(m=>m.factOrders));
-    const totalUnship=sum(mgrs.map(m=>(m.unshipPast||0)+(m.unshipCur||0)+(m.unshipFut||0)));
+    const sumKnown=a=>a.some(v=>v!==null&&v!==undefined)?sum(a):null;
+    const totalShip=sumKnown(mgrs.map(m=>m.factShip));
+    const totalOrders=sumKnown(mgrs.map(m=>m.factOrders));
+    const totalUnship=mgrs.some(m=>[m.unshipPast,m.unshipCur,m.unshipFut].some(v=>v!==null))?sum(mgrs.map(m=>(m.unshipPast||0)+(m.unshipCur||0)+(m.unshipFut||0))):null;
     const unshipPast=sum(mgrs.map(m=>m.unshipPast));
     const avgOf=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:null;
     const avgC2=avgOf(mgrs.filter(m=>m.c2fact!==null).map(m=>m.c2fact));
@@ -8124,7 +8153,7 @@ function renderAnalytics(){ renderAnKpis(); renderFunnel(); renderFlow(); render
       const pctLbl=pct!==null?pct+'%':'—';
       const growthHtml=m.growth!==null?`<span class="rep-delta ${m.growth<0?'dn':'up'}">${m.growth<0?'▼':'▲'} ${fmtPct(Math.abs(m.growth))}</span>`:`<span class="rep-empty">—</span>`;
       const c2Html=m.c2fact!==null||m.c2fore!==null?`<div class="rep-c2">${m.c2fact!==null?`<div class="rep-c2-row"><div class="rep-c2-dot" style="background:var(--accent)"></div>Факт: <b>${fmtPct(m.c2fact)}</b></div>`:''}`+(m.c2fore!==null?`<div class="rep-c2-row"><div class="rep-c2-dot" style="background:var(--green)"></div>Прогноз: <b>${fmtPct(m.c2fore)}</b></div>`:'')+`</div>`:`<span class="rep-empty">нет данных</span>`;
-      return`<tr><td class="rep-mgr">${esc(m.name)}</td><td class="rep-money bold">${m.factShip!==null?fmtMoney(m.factShip):'<span class="rep-empty">нет данных</span>'}</td><td>${growthHtml}</td><td><div class="rep-bar-wrap"><div class="rep-bar"><div class="rep-bar-fill ${barCls}" style="width:${pct!==null?Math.max(0,Math.min(pct,100)):0}%"></div></div><span class="rep-pct ${pct!==null&&pct>0?'good':'none'}">${pctLbl}</span></div></td><td class="rep-money">${m.factOrders!==null?fmtMoney(m.factOrders):'<span class="rep-empty">нет данных</span>'}</td><td>${c2Html}</td></tr>`;
+      return`<tr><td class="rep-mgr">${esc(m.name)}</td><td class="rep-money">${m.planShip!==null?fmtMoney(m.planShip):'<span class="rep-empty">нет данных</span>'}</td><td class="rep-money bold">${m.factShip!==null?fmtMoney(m.factShip):'<span class="rep-empty">нет данных</span>'}</td><td>${growthHtml}</td><td><div class="rep-bar-wrap"><div class="rep-bar"><div class="rep-bar-fill ${barCls}" style="width:${pct!==null?Math.max(0,Math.min(pct,100)):0}%"></div></div><span class="rep-pct ${pct!==null&&pct>0?'good':'none'}">${pctLbl}</span></div></td><td class="rep-money">${m.factOrders!==null?fmtMoney(m.factOrders):'<span class="rep-empty">нет данных</span>'}</td><td>${c2Html}</td></tr>`;
     }).join('');
     tableSection.style.display='';
 
@@ -10518,6 +10547,7 @@ function initRealtime() {
   // Строки отчёта бывают большими, поэтому при изменении перечитываем их запросом.
   const rp = sb.channel('crm-changes-reports')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'reports' }, () => { if (window.repLoadRemote) repLoadRemote(); })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'report_plans' }, async () => { if(window.QP){await QP.load();QP.refreshViews();} })
     .subscribe((status, err) => {
       if (rp !== _rtReportsChannel) return;
       if (status === 'CHANNEL_ERROR' && err) console.warn('Realtime (отчёты) недоступен — запустите supabase/04_reports.sql:', err);
@@ -11562,5 +11592,157 @@ function toggleClientFilters(){const p=document.getElementById('page-clients');i
 
 </script>
 </div><!-- /app-root -->
+<script>
+/* WiseBase 29.2.4: независимые месячные планы; реальные reports не изменяются. */
+(function(){
+'use strict';
+const KEY='wb_report_plans_v1', norm=s=>String(s||'').toLocaleLowerCase('ru').replace(/ё/g,'е').replace(/[.\s\u00a0]+/g,' ').trim();
+const id=r=>norm(r.dir)+'|'+norm(r.name), money=v=>v===null||v===undefined?'Нет данных':new Intl.NumberFormat('ru-RU',{maximumFractionDigits:2}).format(v)+' ₽';
+const MN=['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+let store={}, state='idle', pending=null, busy=false, seq=0;
+const canEdit=()=>!!currentUser&&!!currentProfile&&['admin','administrator','user','manager'].includes(currentProfile.role);
+const clone=x=>JSON.parse(JSON.stringify(x));
+function validate(doc){
+ if(!doc||!Number.isInteger(doc.year)||doc.year<2000||doc.year>2100||!Number.isInteger(doc.quarter)||doc.quarter<1||doc.quarter>4||!Array.isArray(doc.rows)||!doc.rows.length||doc.rows.length>600)throw Error('Некорректный год, квартал или список планов.');
+ const seen=new Set(); const rows=doc.rows.map(r=>{
+  if(!r||!Number.isInteger(r.month)||Math.ceil(r.month/3)!==doc.quarter||r.month<1||r.month>12)throw Error('Месяц не относится к кварталу.');
+  const out={month:r.month,name:String(r.name||'').trim(),dir:String(r.dir||'').trim(),planShip:r.planShip??null,planReceipts:r.planReceipts??null,source:String(r.source||'').slice(0,160)};
+  if(!out.name||out.name.length>120||!out.dir||out.dir.length>120||/^итог|^урал$/i.test(out.name)||/^стариков(?:\s|\.|$)/i.test(out.name))throw Error('Нужны строки реальных менеджеров без итогов и фиктивных показателей Старикова.');
+  for(const k of ['planShip','planReceipts'])if(out[k]!==null&&(typeof out[k]!=='number'||!Number.isFinite(out[k])||out[k]<0||out[k]>1e15))throw Error('План должен быть числом не меньше нуля; пустое значение — null.');
+  const key=out.month+'|'+id(out);if(seen.has(key))throw Error('Повтор менеджера в одном месяце.');seen.add(key);return out;
+ });
+ if(!rows.some(r=>r.planShip!==null||r.planReceipts!==null))throw Error('В файле нет заполненных планов.');
+ return {year:doc.year,quarter:doc.quarter,rows};
+}
+function mergeRows(oldRows,newRows){
+ const map=new Map((oldRows||[]).map(r=>[r.month+'|'+id(r),clone(r)]));
+ for(const r of newRows){const key=r.month+'|'+id(r);let prev=map.get(key);const prior=[...map.entries()].filter(([k,v])=>k!==key&&r.source&&v.month===r.month&&v.source===r.source);if(prior.length>1)throw Error('Неоднозначный источник ранее загруженных планов.');if(prior.length===1){prev=prev||prior[0][1];map.delete(prior[0][0]);}map.set(key,prev?{...r,planShip:r.planShip===null?prev.planShip:r.planShip,planReceipts:r.planReceipts===null?prev.planReceipts:r.planReceipts}:clone(r));}
+ return [...map.values()].sort((a,b)=>a.month-b.month||a.name.localeCompare(b.name,'ru'));
+}
+function parseWorkbook(wb){
+ const ws=wb.Sheets[wb.SheetNames[0]];if(!ws)throw Error('Нет первого листа.');
+ const cell=(c,r)=>ws[c+r]; const text=(c,r)=>String(cell(c,r)?.v??'').trim();
+ const val=(c,r)=>{const x=cell(c,r);if(x?.f&&(x.v===null||x.v===undefined||x.v===''))throw Error('Формула без рассчитанного значения '+c+r);if(!x||x.v===null||x.v===undefined||x.v==='')return null;if(x.t==='e'||typeof x.v!=='number'||!Number.isFinite(x.v)||x.v<0)throw Error('Ошибочное значение '+c+r);return x.v;};
+ const rows=[];let year=null, quarter=null, blocks=0;
+ for(let r=1;r<=200;r++){
+  const t=text('A',r), match=/ПЛАН\s+на\s+(\S+)\s+(20\d\d)/i.exec(t);if(!match)continue;
+  const month=MN.findIndex(n=>norm(n)===norm(match[1]))+1;if(!month)continue;
+  const y=+match[2],q=Math.ceil(month/3);if(year!==null&&(y!==year||q!==quarter))throw Error('Один импорт — один квартал.');year=y;quarter=q;blocks++;
+  if(!/план/i.test(text('B',r+1))||!/план/i.test(text('I',r+1))||!/поступлен/i.test(text('I',r+1)))throw Error('Не распознаны заголовки B/I. Используйте исходную квартальную книгу.');
+  const totalRow=r+3, dir=text('A',totalRow);if(!dir)throw Error('Не указано направление.');
+  const detail=[];for(let d=totalRow+1;d<=200;d++){const name=text('A',d);if(!name||/ПЛАН\s+на|квартал/i.test(name))break;
+   if(/^стариков(?:\s|\.|$)/i.test(name))throw Error('Конфликтующая строка Старикова: исключите ее до импорта.');
+   detail.push({month,name,dir,planShip:val('B',d),planReceipts:val('I',d),source:wb.SheetNames[0]+'!B'+d+' / I'+d});}
+  if(!detail.length)throw Error('Нет менеджеров.');
+  for(const [field,col] of [['planShip','B'],['planReceipts','I']]){const total=val(col,totalRow), values=detail.map(x=>x[field]);if(total!==null&&(values.some(v=>v===null)||Math.abs(values.reduce((a,b)=>a+b,0)-total)>0.02))throw Error('Контрольная сумма не совпадает: '+col+totalRow);}
+  rows.push(...detail);
+ }
+ if(blocks!==3)throw Error('Нужны три месячных блока одного квартала. Второй лист, факты, маржа и квартальные итоги не импортируются.');
+ return validate({year,quarter,rows});
+}
+function monthly(y,m){return (store[y+'-'+Math.ceil(m/3)]?.rows||[]).filter(r=>r.month===m);}
+function overlay(y,m,raw){
+ const out=(raw||[]).map(repApi.parseRow), plans=monthly(y,m);
+ for(const p of plans){let hits=out.filter(r=>id(r)===id(p));if(hits.length>1)continue;let r=hits[0];
+  if(!r){r=repApi.parseRow({'РМ ФИО':p.name,'Направление_РМ':p.dir});r._planOnly=true;out.push(r);}
+  if(p.planShip!==null){r.planShip=p.planShip;r.planPct=r.factShip!==null&&p.planShip>0?r.factShip/p.planShip:null;r._externalPlan=true;}
+  if(p.planReceipts!==null)r.planReceipts=p.planReceipts;
+ }
+ return out;
+}
+function receiptSummary(rows){
+ const sum=k=>{const a=rows.map(r=>r[k]).filter(Number.isFinite);return a.length?a.reduce((s,v)=>s+v,0):null;};
+ const complete=rows.length>0&&rows.every(r=>Number.isFinite(r.planReceipts)&&Number.isFinite(r.factReceipts));
+ const plan=sum('planReceipts'),fact=sum('factReceipts');return{plan,fact,pct:complete&&plan>0?fact/plan:null,complete};
+}
+function receiptTable(groups){
+ const rows=groups.map(g=>{const t=receiptSummary(g.rows);return '<tr><td>'+esc(g.label)+'</td><td>'+money(t.plan)+'</td><td>'+money(t.fact)+'</td><td>'+(t.pct===null?'—':(t.pct*100).toLocaleString('ru-RU',{maximumFractionDigits:2})+'%')+'</td><td>'+(t.complete?'План и факт сопоставлены':'Неполные данные; процент не рассчитан')+'</td></tr>';}).join('');
+ return '<div class="qp-scroll"><table class="rep-table"><thead><tr><th>Менеджер / период</th><th>План поступлений</th><th>Факт поступлений</th><th>Выполнение</th><th>Покрытие</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+}
+function grouped(entries){const map=new Map();for(const e of entries)for(const r of e.rows||[]){const k=id(r);if(!map.has(k))map.set(k,{label:r.name,rows:[]});map.get(k).rows.push(r);}return [...map.values()];}
+function planWarning(){return state==='missing'?'Планы не настроены: выполните 07_report_plans.sql.':state==='error'?'Планы с сервера не обновлены; используется последняя копия.':state==='cache'?'Актуальность локальной копии планов еще не подтверждена.':'';}
+function receiptsAnalytics(entries){const el=document.getElementById('qp-receipts');if(!el)return;el.style.display=entries.length?'':'none';
+ const parsed=entries.map(e=>({rows:overlay(e._y,e._m,e.rows)}));
+ const groups=grouped(parsed);for(const g of groups){if(g.rows.length<entries.length)g.rows.push({planReceipts:null,factReceipts:null});}
+ el.innerHTML='<div class="rep-sec-title">Поступления <span>Отдельно от оборота · выбранный период</span></div><p class="qp-note">'+esc(planWarning())+' Факт — только из актуальных месячных отчетов CRM. Пустые значения не равны нулю. Суммы — по заполненным значениям; процент доступен при полном сопоставлении.</p>'+receiptTable(groups);
+}
+function receiptsStats(win){const el=document.getElementById('qp-stats-receipts');if(!el)return;
+ const scoped=win.map(e=>({rows:srMonthRows(e)}));
+ const byManager=grouped(scoped);for(const g of byManager)if(g.rows.length<win.length)g.rows.push({planReceipts:null,factReceipts:null});
+ const groups=win.map(e=>({label:srLbl(e),rows:srMonthRows(e)}));
+ el.innerHTML='<div class="rep-sec-title">Поступления <span>Отдельно от оборота · фильтры статистики сохранены</span></div><p class="qp-note">'+esc(planWarning())+' Факт — из актуальных месячных отчетов. При неполном покрытии процент не рассчитывается. Планы не добавляют фиктивных месяцев в историю отчетов.</p><h4 style="padding:0 16px">По менеджерам за выбранный период</h4>'+receiptTable(byManager)+'<h4 style="padding:12px 16px 0">По месяцам</h4>'+receiptTable(groups);
+}
+function reset(){store={};state='idle';pending=null;seq++;const p=document.getElementById('qp-preview');if(p)p.innerHTML='';render();}
+function cache(){try{localStorage.setItem(wbDataKey(KEY),JSON.stringify(store));}catch(_){}}
+function loadCache(){store={};try{const v=JSON.parse(localStorage.getItem(wbDataKey(KEY))||'{}');for(const [k,x] of Object.entries(v)){const d=validate(x);if(k===d.year+'-'+d.quarter)store[k]={...x,rows:d.rows};}}catch(_){store={};}state='cache';render();}
+async function load(){if(!currentUser)return;const ctx=wbSessionContext(),ticket=++seq;
+ try{const {data,error}=await sb.from('report_plans').select('year,quarter,rows,revision,file_name,uploaded_at,uploaded_by_name');if(!wbSameSession(ctx)||ticket!==seq)return;
+  if(error)throw error;const next={};for(const x of data||[]){const d=validate(x);next[d.year+'-'+d.quarter]={...x,rows:d.rows};}store=next;state='ok';cache();
+ }catch(e){if(!wbSameSession(ctx)||ticket!==seq)return;state=/42P01|PGRST205/.test(String(e.code))?'missing':'error';}
+ render();
+}
+function refreshViews(){if(window.__rep)__rep.render();if(typeof renderStatsReports==='function')renderStatsReports();render();}
+function knownManagers(){const map=new Map();for(const e of Object.values(repApi.getData()||{}))for(const raw of e.rows||[]){const r=repApi.parseRow(raw);if(!/^стариков(?:\s|\.|$)/i.test(r.name))map.set(id(r),{name:r.name,dir:r.dir});}return [...map.values()];}
+async function readFile(input){const file=input.files?.[0];input.value='';if(!file||busy)return;if(!canEdit()){alert('Нет прав на изменение планов.');return;}if(file.size>10*1024*1024){alert('Максимальный размер файла — 10 МБ.');return;}
+ const ctx=wbSessionContext();try{let doc;const buf=await file.arrayBuffer();if(!wbSameSession(ctx))return;
+ if(/\.json$/i.test(file.name))doc=validate(JSON.parse(new TextDecoder().decode(buf)));else{if(typeof XLSX==='undefined')throw Error('Модуль Excel не загружен. Используйте комплектный JSON планов или повторите онлайн.');doc=parseWorkbook(XLSX.read(buf,{type:'array',cellFormula:true}));}
+ await load();if(!wbSameSession(ctx))return;if(state!=='ok')throw Error('Планы не прочитаны с сервера. Проверьте соединение и выполните 07_report_plans.sql.');
+ const key=doc.year+'-'+doc.quarter;pending={doc,file:file.name.slice(0,120),ctx,revision:store[key]?.revision??null};showPreview();
+ }catch(e){if(wbSameSession(ctx))alert('Импорт не выполнен: '+e.message);}}
+function showPreview(){const el=document.getElementById('qp-preview');if(!el||!pending)return;const {doc}=pending, known=knownManagers();
+ const distinct=[...new Map(doc.rows.map(r=>[id(r),r])).values()];pending.names=distinct;pending.known=known;
+ el.innerHTML='<div class="rep-section" style="padding:16px"><h3>Предпросмотр: '+doc.year+' · '+doc.quarter+' квартал</h3><p>Будут сохранены только месячные планы отгрузок и поступлений. Реальные факты, маржа и отчеты не изменяются. Пустые ячейки сохраняют ранее внесенный план. Выберите соответствие менеджеров и проверьте направление.</p>'+distinct.map((r,i)=>{
+  const exact=known.findIndex(k=>id(k)===id(r));const surname=known.map((k,j)=>({k,j})).filter(x=>norm(x.k.name).split(' ')[0]===norm(r.name).split(' ')[0]&&norm(x.k.dir)===norm(r.dir));const suggested=exact>=0?exact:surname.length===1?surname[0].j:-1;
+  return '<label style="display:block;margin:8px 0">'+esc(r.name)+' · '+esc(r.dir)+' → <select id="qp-map-'+i+'"><option value="source"'+(suggested<0?' selected':'')+'>Как в файле (пока не связан с отчетом)</option>'+known.map((k,j)=>'<option value="'+j+'"'+(j===suggested?' selected':'')+'>'+esc(k.name)+' · '+esc(k.dir)+'</option>').join('')+'</select></label>';
+ }).join('')+previewTable(doc.rows)+'<p class="qp-note">При исправлении соответствия та же исходная строка заменит прежнее сопоставление, не добавляя второй план. Соответствия вступят в силу только после сохранения. Итог квартала — сумма заполненных месяцев, не утвержденная цель полного квартала. Для отсутствующих менеджеров планы не создаются.</p><label><input type="checkbox" id="qp-confirm"> Проверены период, суммы и соответствие менеджеров</label><p><button type="button" class="btn" id="qp-save" onclick="QP.save()">Сохранить планы</button> <button type="button" class="btn" onclick="QP.cancel()">Отмена</button></p><div id="qp-save-status" role="status"></div></div>';}
+function previewTable(rows){return '<div class="qp-scroll"><table class="rep-table"><thead><tr><th>Менеджер / направление</th><th>Месяц</th><th>План отгрузок</th><th>План поступлений</th><th>Источник</th></tr></thead><tbody>'+rows.map(r=>'<tr><td>'+esc(r.name)+' · '+esc(r.dir)+'</td><td>'+MN[r.month-1]+'</td><td>'+money(r.planShip)+'</td><td>'+money(r.planReceipts)+'</td><td>'+esc(r.source)+'</td></tr>').join('')+'</tbody></table></div>';}
+async function save(){if(!pending||busy)return;const p=pending;if(!wbSameSession(p.ctx)||!canEdit()){cancel();return;}const status=document.getElementById('qp-save-status');if(!document.getElementById('qp-confirm')?.checked){status.textContent='Подтвердите проверку данных.';return;}
+ busy=true;document.getElementById('qp-save').disabled=true;status.textContent='Сохранение…';
+ try{const mapped=p.doc.rows.map(r=>{const i=p.names.findIndex(n=>id(n)===id(r)),v=document.getElementById('qp-map-'+i).value;return v==='source'?r:{...r,...p.known[Number(v)]};});
+  const doc=validate({...p.doc,rows:mapped}), key=doc.year+'-'+doc.quarter, before=store[key];
+  if((before?.revision??null)!==p.revision)throw Error('Планы изменились после предпросмотра. Повторите импорт и проверьте новую версию.');
+  const rec={year:doc.year,quarter:doc.quarter,rows:mergeRows(before?.rows,doc.rows),file_name:p.file,uploaded_by_name:currentProfile?.full_name||currentUser.email||''};validate(rec);
+  let query;if(p.revision===null)query=sb.from('report_plans').insert(rec);else query=sb.from('report_plans').update(rec).eq('year',doc.year).eq('quarter',doc.quarter).eq('revision',p.revision);
+  const {data,error}=await query.select('year,quarter,rows,revision,file_name,uploaded_at,uploaded_by_name');if(!wbSameSession(p.ctx))return;
+  if(error)throw Error(error.code==='23505'?'Квартал уже изменен другим сотрудником. Повторите импорт.':error.message);
+  if(!data||data.length!==1)throw Error('Конфликт версии или недостаточно прав. Изменения не подтверждены; перечитайте планы.');
+  const saved=data[0];validate(saved);store[key]=saved;seq++;state='ok';cache();pending=null;document.getElementById('qp-preview').innerHTML='';document.getElementById('qp-year').value=doc.year;document.getElementById('qp-quarter').value=doc.quarter;refreshViews();toast('Планы сохранены. Реальные отчеты не изменены.');
+ }catch(e){if(wbSameSession(p.ctx))status.textContent='Не сохранено: '+e.message;}finally{busy=false;const b=document.getElementById('qp-save');if(b)b.disabled=false;}}
+function cancel(){if(busy)return;pending=null;const el=document.getElementById('qp-preview');if(el)el.innerHTML='';}
+function quarterMatrix(rows,q,field,title){
+ const people=[...new Map(rows.map(r=>[id(r),r])).values()];const months=[q*3-2,q*3-1,q*3];
+ const sum=a=>{const n=a.filter(Number.isFinite);return n.length?n.reduce((x,y)=>x+y,0):null;};
+ return '<h4 style="margin:16px 0">'+title+'</h4><div class="qp-scroll"><table class="rep-table"><thead><tr><th>Менеджер</th>'+months.map(m=>'<th>'+MN[m-1]+'</th>').join('')+'<th>Σ заполненных</th></tr></thead><tbody>'+people.map(p=>{const vals=months.map(m=>rows.find(r=>r.month===m&&id(r)===id(p))?.[field]??null);return '<tr><td>'+esc(p.name)+'<br><span class="rep-empty">'+esc(p.dir)+'</span></td>'+vals.map(v=>'<td>'+money(v)+'</td>').join('')+'<td>'+money(sum(vals))+'</td></tr>';}).join('')+'<tr><td><b>Контрольная сумма</b></td>'+months.map(m=>'<td><b>'+money(sum(rows.filter(r=>r.month===m).map(r=>r[field])))+'</b></td>').join('')+'<td><b>'+money(sum(rows.map(r=>r[field])))+'</b></td></tr></tbody></table></div>';
+}
+function render(){const el=document.getElementById('qp-content');if(!el)return;const y=+document.getElementById('qp-year').value,q=+document.getElementById('qp-quarter').value, mgr=document.getElementById('qp-manager');
+ const rec=store[y+'-'+q], rows=rec?.rows||[];const selected=mgr.value;const names=[...new Map(rows.map(r=>[id(r),r])).values()];mgr.innerHTML='<option value="">Все менеджеры</option>'+names.map(r=>'<option value="'+esc(id(r))+'">'+esc(r.name)+' · '+esc(r.dir)+'</option>').join('');mgr.value=names.some(r=>id(r)===selected)?selected:'';
+ const warning=state==='missing'?'Не настроена таблица планов. Выполните supabase/07_report_plans.sql.':state==='error'?'Не удалось обновить планы. Показана последняя сохраненная копия.':state==='cache'?'Локальная копия: актуальность на сервере пока не подтверждена.':'';
+ document.getElementById('qp-status').textContent=warning||(rec?'Источник: '+(rec.file_name||'импорт')+' · версия '+rec.revision+' · '+(rec.uploaded_at?new Date(rec.uploaded_at).toLocaleString('ru-RU'):''):'Планы не загружены. Импортируйте квартальную книгу или комплектный JSON.');
+ document.getElementById('qp-import').style.display=canEdit()?'':'none';
+ if(!rows.length){el.innerHTML='<p class="qp-note">Нет данных за выбранный квартал. Отсутствие плана не означает нулевой план.</p>';return;}
+ const filtered=rows.filter(r=>!mgr.value||id(r)===mgr.value), active=new Set(filtered.filter(r=>r.planShip!==null).map(r=>r.month));
+ el.innerHTML='<p class="qp-note">План отгрузок заполнен за '+active.size+' из 3 месяцев. Ниже — месячные значения; полная квартальная цель не предполагается автоматически. Факты и маржа из квартальной книги не используются.</p>'+quarterMatrix(filtered,q,'planShip','План отгрузок')+quarterMatrix(filtered,q,'planReceipts','План поступлений · отдельно');
+}
+function init(){const tab=document.getElementById('an-tab-reports');if(!tab)return;
+ const b=document.createElement('button');b.id='an-tab-quarter';b.className=tab.className.replace(/active/g,'');b.textContent='План квартала';b.onclick=()=>switchAnTab('quarter');tab.after(b);
+ const panel=document.createElement('div');panel.id='an-panel-quarter';panel.className='page-scroll';panel.style.display='none';panel.innerHTML='<div class="rep-panel active"><h3>План квартала</h3><div class="rep-header"><label>Год <input id="qp-year" type="number" min="2000" max="2100" value="'+new Date().getFullYear()+'" onchange="QP.render()" style="width:90px"></label><label>Квартал <select id="qp-quarter" onchange="QP.render()">'+[1,2,3,4].map(q=>'<option'+(q===Math.ceil((new Date().getMonth()+1)/3)?' selected':'')+'>'+q+'</option>').join('')+'</select></label><select id="qp-manager" aria-label="Менеджер" onchange="QP.render()"></select><button class="rep-upload-btn" id="qp-import" onclick="document.getElementById(\'qp-file\').click()">Импорт планов</button><input type="file" id="qp-file" accept=".xlsx,.json" hidden onchange="QP.readFile(this)"></div><p class="qp-note" id="qp-status" role="status"></p><p class="qp-note">Импорт только после предпросмотра. План оборота = план отгрузок. Поступления учитываются отдельно. Старые месячные отчеты не перезаписываются; пустые ячейки при повторном импорте не удаляют планы.</p><div id="qp-preview"></div><div class="rep-section" id="qp-content" style="padding:16px"></div></div>';
+ document.getElementById('an-panel-reports').after(panel);
+ const a=document.createElement('div');a.id='qp-receipts';a.className='rep-section';a.style.display='none';document.getElementById('repUnshipSection').after(a);
+ const s=document.createElement('div');s.id='qp-stats-receipts';s.className='rep-section';document.getElementById('sr-body').append(s);
+ const original=window.switchAnTab;window.switchAnTab=function(t){original(t);b.classList.toggle('active',t==='quarter');panel.style.display=t==='quarter'?'':'none';if(t==='quarter')render();};
+ render();
+}
+function isConditionalRows(rows){
+ if(!Array.isArray(rows)||rows.length!==4)return false;
+ const names=rows.map(r=>norm(r['РМ ФИО'])).sort();
+ if(JSON.stringify(names)!==JSON.stringify(['Деменьшин П. М.','Дронь Н. С.','Стариков А. Ю.','Турусов К. М.'].map(norm).sort()))return false;
+ return rows.every(r=>norm(r['Направление_РМ'])==='урал'&&__rep.cleanNum(r['Факт_отгрузки_мес., руб.'])===1&&__rep.cleanNum(r['Факт_заказов_мес., руб.'])===1&&__rep.cleanNum(r['Факт_поступлений_мес., руб.'])===1);
+}
+window.QP={isConditionalRows,validate,mergeRows,parseWorkbook,monthly,overlay,receiptSummary,receiptsAnalytics,receiptsStats,reset,loadCache,load,refreshViews,readFile,save,cancel,render};
+window.__qp={setData:v=>{store=v;state='ok';},getData:()=>store,getPending:()=>pending,norm};
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
+})();
+
+</script>
 </body>
 </html>
