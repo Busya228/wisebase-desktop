@@ -2,7 +2,7 @@
 const fs=require('fs'),path=require('path');
 const {launch,openApp,assert}=require('./_helpers');
 const fixture=JSON.parse(fs.readFileSync(path.join(__dirname,'fixtures/quarter-cached-cells.json')));
-const seed=JSON.parse(fs.readFileSync(path.join(__dirname,'../../plans/Урал_IV_квартал_2026_только_планы.json')));
+const seed=JSON.parse(fs.readFileSync(path.join(__dirname,'fixtures/quarter-plan-seed.json')));
 (async()=>{
  const {browser,page,errors}=await launch({stub:true});await openApp(page);
  const pure=await page.evaluate(({fixture,seed})=>{

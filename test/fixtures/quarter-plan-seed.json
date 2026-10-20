@@ -1,0 +1,78 @@
+{
+  "year": 2026,
+  "quarter": 4,
+  "rows": [
+    {
+      "month": 10,
+      "name": "Деменьшин П. М.",
+      "dir": "Урал",
+      "planShip": 37440000,
+      "planReceipts": 36929520,
+      "source": "Лист1!B5 / I5"
+    },
+    {
+      "month": 10,
+      "name": "Дронь Н. С.",
+      "dir": "Урал",
+      "planShip": 20880000,
+      "planReceipts": 27896400,
+      "source": "Лист1!B6 / I6"
+    },
+    {
+      "month": 10,
+      "name": "Турусов К. М.",
+      "dir": "Урал",
+      "planShip": 13680000,
+      "planReceipts": 23734080,
+      "source": "Лист1!B7 / I7"
+    },
+    {
+      "month": 11,
+      "name": "Деменьшин П. М.",
+      "dir": "Урал",
+      "planShip": null,
+      "planReceipts": null,
+      "source": "Лист1!B12 / I12"
+    },
+    {
+      "month": 11,
+      "name": "Дронь Н. С.",
+      "dir": "Урал",
+      "planShip": null,
+      "planReceipts": null,
+      "source": "Лист1!B13 / I13"
+    },
+    {
+      "month": 11,
+      "name": "Турусов К. М.",
+      "dir": "Урал",
+      "planShip": null,
+      "planReceipts": null,
+      "source": "Лист1!B14 / I14"
+    },
+    {
+      "month": 12,
+      "name": "Деменьшин П. М.",
+      "dir": "Урал",
+      "planShip": null,
+      "planReceipts": null,
+      "source": "Лист1!B19 / I19"
+    },
+    {
+      "month": 12,
+      "name": "Дронь Н. С.",
+      "dir": "Урал",
+      "planShip": null,
+      "planReceipts": null,
+      "source": "Лист1!B20 / I20"
+    },
+    {
+      "month": 12,
+      "name": "Турусов К. М.",
+      "dir": "Урал",
+      "planShip": null,
+      "planReceipts": null,
+      "source": "Лист1!B21 / I21"
+    }
+  ]
+}

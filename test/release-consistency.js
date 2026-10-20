@@ -30,6 +30,9 @@ assert(fs.existsSync(path.join(ROOT, "supabase", "04_reports.sql")), "есть S
 assert(fs.existsSync(path.join(ROOT, "supabase", "05_roles.sql")), "есть SQL для смены ролей из CRM (supabase/05_roles.sql)");
 assert(fs.existsSync(path.join(ROOT, "supabase", "06_user_settings.sql")), "есть SQL для личных настроек (supabase/06_user_settings.sql)");
 
+assert(fs.existsSync(path.join(ROOT, 'test/fixtures/quarter-plan-seed.json')), 'квартальная фикстура находится внутри desktop-репозитория');
+assert(wf.includes("- 'test/**'") && wf.includes("- '.github/workflows/release.yml'"), 'изменение тестов и workflow запускает новую сборку');
+
 // Секреты: приватный VAPID-ключ, сервисный ключ Supabase, токены GitHub.
 const files = [];
 (function walk(d) {

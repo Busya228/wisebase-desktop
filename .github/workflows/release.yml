@@ -26,6 +26,9 @@ on:
       - 'package-lock.json'
       - 'build/**'
       - 'scripts/**'
+      - 'test/**'
+      - 'publish-update.bat'
+      - '.github/workflows/release.yml'
   workflow_dispatch: {}
 
 permissions:
