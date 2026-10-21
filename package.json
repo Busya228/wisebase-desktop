@@ -1,7 +1,7 @@
 {
   "name": "wisebase-crm-desktop",
   "productName": "WiseBase CRM",
-  "version": "29.2.7",
+  "version": "29.2.8",
   "description": "WiseBase CRM — десктоп-версия (обёртка над веб-приложением)",
   "main": "main.js",
   "author": "WiseBase",

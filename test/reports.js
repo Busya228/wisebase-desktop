@@ -58,7 +58,7 @@ const row = (name, o) => Object.assign({ "РМ ФИО": name, "Направле�
     window.__rep.render();
     return {
       title: document.getElementById("repTableTitle").textContent,
-      pcts: [...document.querySelectorAll("#repTableBody .rep-pct")].map(e => e.textContent),
+      pcts: [...document.querySelectorAll("#repTableBody .rep-sub")].map(e => e.textContent.replace(/ плана$/, "")),
       bars: [...document.querySelectorAll("#repTableBody .rep-bar-fill")].map(e => e.style.width),
       nav: document.getElementById("repNavMonth").textContent,
       del: document.getElementById("repDeleteBtn").style.display,
@@ -69,7 +69,7 @@ const row = (name, o) => Object.assign({ "РМ ФИО": name, "Направле�
     m8: [row("Иванов", { "Выполнение плана, отгр.": 1, "Факт_отгрузки_мес., руб.": 100 })],
   });
   assert(month.title === "Юг — 2 менеджера", "заголовок таблицы с правильным склонением: " + month.title);
-  assert(month.pcts[0] === "125%" && month.bars[0] === "100%", "перевыполнение плана показывается как 125%, полоска не шире 100%: " + JSON.stringify(month));
+  assert(month.pcts[0] === "125%" && month.bars[0] === "100%", "перевыполнение плана показывается под фактом отгрузок как 125%, полоска не шире 100%: " + JSON.stringify(month));
   assert(month.nav === "Июль", "название месяца «Июль» (было «Июл»): " + month.nav);
   assert(month.del === "" && month.noData === "none", "за месяц с данными администратор видит кнопку удаления, заглушки «Нет данных» нет");
 
