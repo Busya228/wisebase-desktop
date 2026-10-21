@@ -3261,7 +3261,7 @@ let TODAY=today(); // обновляется без перезагрузки п�
 // новой присланной версии). Показывается в Профиле, чтобы можно было сверить «то, что
 // открыто на телефоне» с «тем, что прислали только что» — без гадания, обновился
 // ли сайт после деплоя на хостинг.
-const APP_BUILD='ver 29.2 · восстановлена функциональность 29.2.3';
+const APP_BUILD='ver 29.2 · прежний интерфейс, импорт исходной формы Excel';
 // Преобразует Date обратно в строку 'YYYY-MM-DD' по ЛОКАЛЬНЫМ компонентам (не UTC) — пара к today().
 function dateToLocalStr(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 // Парсит строку 'YYYY-MM-DD' как ЛОКАЛЬНУЮ дату (полночь по местному времени), а не UTC.
@@ -7817,11 +7817,10 @@ function renderAnalytics(){ renderAnKpis(); renderFunnel(); renderFlow(); render
   // квартал/год собираются из загруженных месяцев (см. repAggregate).
   let repPeriod='month';
   const Q_RU=['I','II','III','IV'];
-  // Колонки отчёта, которые реально используются, — только их и храним (меньше
-  // места в localStorage: у браузера лимит ~5 МБ на все данные приложения).
-  const REP_COLS=['РМ ФИО','ФИО','Направление_РМ','Направление','План_отгрузок_мес., руб.','Факт_отгрузки_мес., руб.',
-    'Выполнение плана, отгр.','Факт отгрузки(прош. год)','Прирост гг (отгрузки)','Факт_заказов_мес., руб.',
-    'НЕОТГРУЖЕННЫЕ прошлых периодов','НЕОТГРУЖЕННЫЕ текущего месяца','НЕОТГРУЖЕННЫЕ будущих периодов','Факт С2, %','С2, % Прогноз на 1 мес. вперед'];
+  // Все известные поля месячной выгрузки храним в прежнем JSON rows.
+  // Разметка и расчёты аналитики/статистики остаются как в 29.2.3.
+  const REP_COLS=["РМ ФИО", "ФИО", "Направление", "Направление_РМ", "План_отгрузок_мес., руб.", "Факт_отгрузки_мес., руб.", "Выполнение плана, отгр.", "Факт отгрузки(прош. год)", "Прирост гг (отгрузки)", "Прогноз_отгрузок_РП., руб.", "Выполнение плана,отгр.РП", "Факт_заказов_мес., руб.", "НЕОТГРУЖЕННЫЕ прошлых периодов", "НЕОТГРУЖЕННЫЕ текущего месяца", "НЕОТГРУЖЕННЫЕ будущих периодов", "Прогноз на конец мес, р", "Выполнение плана,итог мес", "План С2 %", "Факт С2, %", "С2, % Прогноз на 1 мес. вперед", "План_Сквозная маржа_мес.,руб.", "Факт_Сквоз.маржа (мес.), руб.", "Выполнение плана, Скв. маржа", "План_поступлений_мес., руб.", "Факт_поступлений_мес., руб.", "Выполнение плана, поступл", "Прогноз_поступлений_мес., руб.", "Выполнение плана, Прогноз поступ", "Факт С3, %", "Факт_С3 (мес.), руб."];
+  const REP_EXPORT_COLS=["Направление", "Направление_РМ", "РМ ФИО", "План_отгрузок_мес., руб.", "Факт_отгрузки_мес., руб.", "Выполнение плана, отгр.", "Факт отгрузки(прош. год)", "Прирост гг (отгрузки)", "Прогноз_отгрузок_РП., руб.", "Выполнение плана,отгр.РП", "Факт_заказов_мес., руб.", "НЕОТГРУЖЕННЫЕ прошлых периодов", "НЕОТГРУЖЕННЫЕ текущего месяца", "НЕОТГРУЖЕННЫЕ будущих периодов", "Прогноз на конец мес, р", "Выполнение плана,итог мес", "План С2 %", "Факт С2, %", "С2, % Прогноз на 1 мес. вперед", "План_Сквозная маржа_мес.,руб.", "Факт_Сквоз.маржа (мес.), руб.", "Выполнение плана, Скв. маржа", "План_поступлений_мес., руб.", "Факт_поступлений_мес., руб.", "Выполнение плана, поступл", "Прогноз_поступлений_мес., руб.", "Выполнение плана, Прогноз поступ", "Факт С3, %", "Факт_С3 (мес.), руб."];
   function plural(n,one,few,many){ const a=Math.abs(n)%100, b=a%10; if(a>10&&a<20)return many; if(b>1&&b<5)return few; if(b===1)return one; return many; }
   function periodLabel(){
     if(repPeriod==='quarter') return Q_RU[Math.floor(repMonth/3)]+' квартал '+repYear;
@@ -7957,40 +7956,115 @@ function renderAnalytics(){ renderAnKpis(); renderFunnel(); renderFlow(); render
     return moved;
   }
 
+  // Заголовки нормализуются до выбора блока; одинаковые названия справа не
+  // теряются за суффиксами SheetJS (_1). Блоки никогда не смешиваются построчно.
+  function repHeader(v){return String(v??'').toLowerCase().replace(/ё/g,'е').replace(/[\s\u00a0\u202f_.,()%]/g,'');}
+  function repCanonicalRows(raw){
+    const lookup=new Map(REP_COLS.map(c=>[repHeader(c),c]));lookup.set(repHeader('ФИО'),'РМ ФИО');
+    return raw.map(r=>{const o={};for(const [k,v] of Object.entries(r)){const c=lookup.get(repHeader(k));if(c)o[c]=v;}return o;})
+      .filter(r=>{const n=String(r['РМ ФИО']||'').trim();return n&&!/^итог/i.test(n);});
+  }
+  function repWorkbookCandidates(wb){
+    const lookup=new Map(REP_COLS.map(c=>[repHeader(c),c]));lookup.set(repHeader('ФИО'),'РМ ФИО');
+    const candidates=[];
+    for(const sheet of wb.SheetNames){const ws=wb.Sheets[sheet];if(!ws)continue;
+      const grid=XLSX.utils.sheet_to_json(ws,{header:1,range:0,defval:null,raw:true});
+      // Совместимость с тестовыми адаптерами старого интерфейса sheet_to_json.
+      if(grid.length&&!Array.isArray(grid[0])){const rows=repCanonicalRows(grid);if(rows.length)candidates.push({label:sheet,rows});continue;}
+      let h=-1;for(let i=0;i<Math.min(grid.length,50);i++)if((grid[i]||[]).some(v=>['РМ ФИО','ФИО'].some(n=>repHeader(v)===repHeader(n)))){h=i;break;}
+      if(h<0)continue;
+      const heads=grid[h]||[], people=[];heads.forEach((v,c)=>{if(['РМ ФИО','ФИО'].some(n=>repHeader(v)===repHeader(n)))people.push(c);});
+      const starts=people.map((c,i)=>{for(let j=c-1;j>(i?people[i-1]:-1);j--)if(repHeader(heads[j])===repHeader('Направление'))return j;return c;});
+      if(people.length===1)starts[0]=0;
+      people.forEach((person,i)=>{
+        const left=starts[i],right=i+1<starts.length?starts[i+1]:heads.length;
+        const columns=[];const seen=new Set();for(let c=left;c<right;c++){const key=lookup.get(repHeader(heads[c]));if(!key)continue;if(seen.has(key))throw Error('Повтор заголовка внутри одного блока: '+heads[c]);seen.add(key);columns.push([c,key]);}
+        const rows=[];for(let r=h+1;r<grid.length;r++){const o={};for(const [c,k] of columns)o[k]=grid[r]?.[c]??null;const n=String(o['РМ ФИО']||o['ФИО']||'').trim();if(!n||/^итог/i.test(n))continue;for(const [c,k] of columns){if(['РМ ФИО','ФИО','Направление','Направление_РМ'].includes(k))continue;const cell=ws[XLSX.utils.encode_cell({r,c})];if(cell&&(cell.t==='e'||cell.f&&(cell.v===undefined||cell.v===null||cell.v==='')))throw Error('Ошибка или нерассчитанная формула '+sheet+'!'+XLSX.utils.encode_cell({r,c})+'. Пересчитайте и сохраните файл в Excel.');}rows.push(o);}
+        if(rows.length)candidates.push({sheet,left,right,headers:heads.slice(left,right),label:sheet+' · '+XLSX.utils.encode_col(left)+':'+XLSX.utils.encode_col(right-1)+' · заголовки в строке '+(h+1),rows});
+      });
+    }
+    for(const block of candidates){
+      const seen=new Set();let actuals=0;
+      for(const r of block.rows){const key=String(r['Направление_РМ']||r['Направление']||'').trim().toLowerCase()+'|'+String(r['РМ ФИО']||'').trim().toLowerCase();if(seen.has(key))throw Error('Повтор менеджера в блоке '+block.label);seen.add(key);
+        for(const [k,v] of Object.entries(r)){if(['РМ ФИО','ФИО','Направление','Направление_РМ'].includes(k))continue;
+          const blank=v===null||v===undefined||String(v).trim()===''||/^\(пусто\)$/i.test(String(v).trim());
+          if(!blank&&cleanNum(v)===null)throw Error('Не удалось прочитать число: '+k+' / '+r['РМ ФИО']+'. Проверьте формулы и сохраните файл в Excel.');
+          if(['Факт_отгрузки_мес., руб.','Факт_заказов_мес., руб.','Факт_поступлений_мес., руб.'].includes(k)&&cleanNum(v)!==null)actuals++;
+        }
+      }
+      if(!actuals)throw Error('В блоке '+block.label+' нет рассчитанных фактических показателей. Старый отчет не заменен.');
+    }
+    return candidates;
+  }
+  function repKnownExportBlock(blocks){
+    if(blocks.length!==2)return null;
+    const [left,right]=blocks;
+    if(left.sheet!==right.sheet||left.left!==0||left.right!==20||right.left!==20||right.right!==49)return null;
+    if(!right.headers||right.headers.length!==REP_EXPORT_COLS.length||
+      !REP_EXPORT_COLS.every((h,i)=>repHeader(h)===repHeader(right.headers[i])))return null;
+    if(left.rows.length!==right.rows.length)return null;
+    const identity=r=>[r['РМ ФИО'],r['Направление'],r['Направление_РМ']].map(v=>String(v||'').trim().toLowerCase()).join('|');
+    if(!left.rows.every((r,i)=>identity(r)===identity(right.rows[i])))return null;
+    // Known source layout: A:T is the repeated short block, U:AW is the full
+    // monthly export. Select the full block by schema, never by larger amounts.
+    return right;
+  }
+  function repChooseBlock(blocks){return new Promise(resolve=>{
+    const old=document.getElementById('rep-block-choice');if(old){old.dispatchEvent(new Event('rep-cancel'));}
+    const el=document.createElement('div');el.id='rep-block-choice';el.setAttribute('role','dialog');el.setAttribute('aria-modal','true');el.setAttribute('aria-label','Выбор блока отчета');
+    el.style.cssText='position:fixed;inset:0;z-index:12000;background:#0008;display:flex;align-items:center;justify-content:center;padding:16px';
+    const panel=document.createElement('div');panel.style.cssText='background:var(--card,#fff);color:var(--t1,#111);border-radius:16px;padding:24px;max-width:720px;width:100%;max-height:85vh;overflow:auto';el.appendChild(panel);
+    const title=document.createElement('h3');title.textContent='В файле несколько блоков с одинаковыми заголовками';panel.appendChild(title);
+    const hint=document.createElement('p');hint.textContent='Выберите блок с актуальными показателями. Импортируется только выбранный блок целиком; данные блоков не складываются и не смешиваются. До подтверждения ничего не сохраняется.';panel.appendChild(hint);
+    const finish=block=>{el.remove();resolve(block);};el.addEventListener('rep-cancel',()=>finish(null),{once:true});el.addEventListener('keydown',e=>{if(e.key==='Escape')finish(null);if(e.key==='Tab'){const btns=[...el.querySelectorAll('button')],first=btns[0],last=btns.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}});
+    blocks.forEach((b,i)=>{const p=document.createElement('p');p.textContent='Блок '+(i+1)+' · '+b.label+' · менеджеров: '+b.rows.length;panel.appendChild(p);
+      const totals=['Факт_отгрузки_мес., руб.','Факт_заказов_мес., руб.','Факт_поступлений_мес., руб.'].map(k=>{const a=b.rows.map(r=>cleanNum(r[k])).filter(v=>v!==null);return ({'Факт_отгрузки_мес., руб.':'Отгрузки','Факт_заказов_мес., руб.':'Заказы','Факт_поступлений_мес., руб.':'Поступления'}[k])+': '+(a.length?a.reduce((s,v)=>s+v,0).toLocaleString('ru-RU')+' ₽':'Нет данных');});
+      const detail=document.createElement('p');detail.textContent=totals.join(' · ');panel.appendChild(detail);
+      const btn=document.createElement('button');btn.type='button';btn.className='rep-upload-btn';btn.style.cssText='max-width:100%;white-space:normal;text-align:left;overflow-wrap:anywhere;line-height:1.5;min-height:44px';btn.dataset.reportBlock=i;btn.textContent='Выбрать блок '+(i+1)+' ('+b.label+')';btn.onclick=()=>finish(b);panel.appendChild(btn);
+    });
+    const cancel=document.createElement('button');cancel.type='button';cancel.className='rep-upload-btn';cancel.style.cssText='min-height:44px;background:var(--bg,#f4f6f8);color:var(--t1,#111);border:1px solid var(--border,#ddd)';cancel.textContent='Отмена';cancel.onclick=()=>finish(null);panel.appendChild(document.createElement('hr'));panel.appendChild(cancel);document.body.appendChild(el);cancel.focus();
+  });}
+  window.__repImport={candidates:repWorkbookCandidates,knownExport:repKnownExportBlock};
+  let repUploadSeq=0;
   window.repHandleFile=function(input){
     const file=input.files[0]; if(!file) return;
+    const uploadSeq=++repUploadSeq;
+    document.getElementById('rep-block-choice')?.dispatchEvent(new Event('rep-cancel'));
+    if(file.size>10*1024*1024){input.value='';alert('Максимальный размер отчета — 10 МБ.');return;}
     input.value='';
     if(!repCanEdit()){ alert('Загружать отчёты может сотрудник с назначенной ролью — обратитесь к администратору.'); return; }
     if(typeof isOnline==='function'&&!isOnline()){ alert('Нет подключения к интернету — отчёт сохраняется в общую базу, поэтому загрузить его можно только онлайн.'); return; }
     if(typeof XLSX==='undefined'||!XLSX.read){ alert('Модуль чтения Excel ещё не загрузился — проверьте интернет и попробуйте снова.'); return; }
     const ctx=wbSessionContext();if(!ctx.userId)return;
+    const targetYear=repYear,targetMonth=repMonth;
     const rd=new FileReader();
     rd.onload=async function(e){
-      if(!wbSameSession(ctx))return;
+      if(!wbSameSession(ctx)||uploadSeq!==repUploadSeq)return;
       try{
-        const wb=XLSX.read(e.target.result,{type:'array'});
-        const ws=wb.Sheets[wb.SheetNames[0]];
-        const raw=ws?XLSX.utils.sheet_to_json(ws,{defval:null}):[];
-        // Строки без ФИО менеджера (пустые, «Итого» и т.п.) в расчёт не берём.
-        const rows=raw.map(r=>{ const o={}; REP_COLS.forEach(c=>{ if(r[c]!==undefined) o[c]=r[c]; }); return o; })
-          .filter(r=>{ const n=String(r['РМ ФИО']||r['ФИО']||'').trim(); return n && !/^итог/i.test(n); });
-        if(!rows.length){
-          alert('В файле не найдено строк с менеджерами. Нужна колонка «РМ ФИО» (или «ФИО») на первом листе.');
-          return;
-        }
-        const key=curKey();
+        const wb=XLSX.read(e.target.result,{type:'array',cellFormula:true});
+        const candidates=repWorkbookCandidates(wb);
+        if(!candidates.length)throw Error('В файле не найдено строк с менеджерами. Нужна колонка «РМ ФИО» (или «ФИО») и показатели месячного отчета.');
+        const selected=repKnownExportBlock(candidates)||(candidates.length===1?candidates[0]:await repChooseBlock(candidates));
+        if(!selected||!wbSameSession(ctx)||uploadSeq!==repUploadSeq)return;
+        const rows=selected.rows;
+        const key=targetYear+'-'+(targetMonth+1);
         const prev=repData[key];
-        const y=repYear, mo=repMonth;
+        const y=targetYear, mo=targetMonth;
         const monthName=MONTHS_RU[mo]+' '+y;
-        if(prev && !confirm('За '+monthName+' уже загружен отчёт ('+prev.loaded+(prev.by?', '+prev.by:'')+'). Заменить его новым файлом? Отчёт заменится у всех сотрудников.')) return;
+        const knownTotal=k=>{const nums=rows.map(r=>cleanNum(r[k])).filter(v=>v!==null);return nums.length?nums.reduce((a,b)=>a+b,0).toLocaleString('ru-RU')+' ₽':'Нет данных';};
+        const summary='Источник: '+selected.label+'\nСтрок менеджеров: '+rows.length+'\nФакт отгрузок: '+knownTotal('Факт_отгрузки_мес., руб.')+'\nФакт заказов: '+knownTotal('Факт_заказов_мес., руб.')+'\nФакт поступлений: '+knownTotal('Факт_поступлений_мес., руб.')+'\nПустые показатели останутся пустыми, не нулями.\n';
+        if(!confirm(summary+(prev?'За '+monthName+' уже загружен отчёт ('+prev.loaded+(prev.by?', '+prev.by:'')+'). Заменить его новым файлом? Отчёт заменится у всех сотрудников.':'Загрузить месячный отчет за '+monthName+'? Он будет доступен всем сотрудникам.')))return;
+        if(!wbSameSession(ctx)||uploadSeq!==repUploadSeq)return;
+        if(!repCanEdit())return;
         const rec={year:y,month:mo+1,rows,file_name:String(file.name||'').slice(0,120),loaded_at:new Date().toISOString(),
           uploaded_by:currentUser?.id||null,uploaded_by_name:currentProfile?.full_name||currentUser?.email||''};
         const { error } = await sb.from('reports').upsert(rec,{onConflict:'year,month'});
-        if(!wbSameSession(ctx))return;
+        if(!wbSameSession(ctx)||uploadSeq!==repUploadSeq)return;
         if(error){ alert('Не удалось сохранить отчёт: '+repErrText(error)); return; }
         repData[y+'-'+(mo+1)]={rows,loaded:repFmtLoaded(rec.loaded_at),file:rec.file_name,by:rec.uploaded_by_name};
         repSaveCache();
         repRenderNav(); repRender();
+        if(document.getElementById('page-stats')?.classList.contains('active')&&typeof renderStatsReports==='function')renderStatsReports();
         if(typeof toast==='function') toast('Отчёт за '+monthName+' сохранён для всех: '+rows.length+' '+plural(rows.length,'менеджер','менеджера','менеджеров'));
       }catch(err){ alert('Не удалось прочитать файл: '+err.message); }
     };
@@ -8014,12 +8088,13 @@ function renderAnalytics(){ renderAnKpis(); renderFunnel(); renderFlow(); render
   // пробелов, запятая → точка, «85%» → 0.85 (в том же виде, что и числовые
   // проценты Excel). «(Пусто)»/пусто → null.
   function cleanNum(v){
-    if(v===null||v===undefined||v==='(Пусто)'||v==='') return null;
+    if(v===null||v===undefined||typeof v==='string'&&(!v.trim()||/^\(пусто\)$/i.test(v.trim()))) return null;
     if(typeof v==='number') return isFinite(v)?v:null;
     if(typeof v!=='string') return null;
     let t=v.replace(/[\s\u00a0\u202f]/g,'').replace(/₽|руб\.?/gi,'').replace(',','.');
     const pct=/%$/.test(t); if(pct) t=t.slice(0,-1);
-    const n=fmt(t); if(n===null) return null;
+    if(!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i.test(t))return null;
+    const n=Number(t); if(!Number.isFinite(n)) return null;
     return pct?n/100:n;
   }
   function parseRow(r){
